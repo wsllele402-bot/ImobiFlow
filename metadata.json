@@ -1,0 +1,7 @@
+{
+  "name": "ImobiFlow - Gestão de Aluguéis",
+  "description": "Uma plataforma completa para imobiliárias e proprietários gerenciarem múltiplos imóveis (kitnets, casas, apartamentos, galpões), inquilinos, cobranças via Asaas e agendamento de visitas.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

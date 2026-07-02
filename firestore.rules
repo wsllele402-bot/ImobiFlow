@@ -1,0 +1,21 @@
+rules_version = '2';
+
+// Regras do banco (Firestore): cada usuário só acessa os próprios dados.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+
+    // Perfil do próprio usuário (documento com o id = uid)
+    match /profiles/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Demais coleções (imóveis, proprietários, inquilinos, contratos,
+    // despesas, pagamentos...): só o dono (campo userId) pode ler/escrever.
+    match /{collection}/{docId} {
+      allow read, update, delete: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+    }
+  }
+}
