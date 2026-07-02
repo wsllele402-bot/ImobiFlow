@@ -187,15 +187,48 @@ td .s{font-size:11.5px;color:var(--gray)}
 @keyframes sp{to{transform:rotate(360deg)}}
 .center{min-height:60vh;display:grid;place-items:center}
 
-@media(max-width:880px){
-  .ifapp{grid-template-columns:1fr}.side{display:none}
-  #iflogin{grid-template-columns:1fr}#iflogin .left{display:none}
-  .wrap{padding:16px 14px 90px}.top{padding:14px 16px}
-  .kpis{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.pgrid{grid-template-columns:1fr}.repsum{grid-template-columns:1fr 1fr}
-  table{min-width:560px}.hidesm{display:none}
-  .mob{display:flex}
-}
+/* barra inferior (mobile) — escondida por padrão, aparece via media query */
 .mob{display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);padding:8px 4px;justify-content:space-around;z-index:30}
 .mob button{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:9px;font-weight:800;color:#9ca3af;padding:5px;text-transform:uppercase;letter-spacing:.04em}
 .mob button i{font-size:18px}
 .mob button.active{color:var(--indigo)}
+
+/* evita rolagem horizontal indevida */
+html,body{max-width:100%;overflow-x:hidden}
+
+/* telas médias: reduz colunas antes de virar mobile */
+@media(max-width:1180px){ .pgrid{grid-template-columns:repeat(2,1fr)} }
+@media(max-width:1024px){
+  .ifapp{grid-template-columns:208px 1fr}
+  .wrap{padding:22px 20px 60px}
+}
+
+/* tablet / celular: layout mobile */
+@media(max-width:880px){
+  .ifapp{grid-template-columns:1fr}
+  .side{display:none}
+  .mob{display:flex}
+  #iflogin{grid-template-columns:1fr}
+  #iflogin .left{display:none}
+  .wrap{padding:16px 14px 92px}
+  .top{padding:14px 16px}
+  .top h1{font-size:19px}
+  .kpis{grid-template-columns:1fr 1fr;gap:11px}
+  .grid2{grid-template-columns:1fr}
+  .pgrid{grid-template-columns:1fr}
+  .repsum{grid-template-columns:1fr 1fr}
+  .hidesm{display:none}
+  table{min-width:520px}
+  .scrhead{gap:10px}
+  .modal{border-radius:20px}
+}
+
+/* celular pequeno */
+@media(max-width:430px){
+  .kpis{grid-template-columns:1fr}
+  .kpi .v{font-size:23px}
+  .wrap{padding:14px 12px 92px}
+  .top .btn-i{padding:9px 12px;font-size:11px}
+  .reph{flex-wrap:wrap}
+  .repfoot{flex-wrap:wrap;gap:10px}
+}
