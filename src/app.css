@@ -66,7 +66,7 @@ select.inp{cursor:pointer}
 .btn-i:hover{background:var(--indigo-d)}
 .btn-g{display:inline-flex;align-items:center;gap:7px;background:#fff;color:#374151;border:1px solid var(--line);padding:10px 14px;border-radius:12px;font-weight:700;font-size:12px;transition:.15s}
 .btn-g:hover{border-color:var(--indigo);color:var(--indigo)}
-.wrap{padding:24px 28px 64px;max-width:1120px;width:100%}
+.wrap{padding:24px 28px 64px;width:100%}
 
 /* cards / kpis */
 .glass{background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow)}
@@ -198,6 +198,9 @@ html,body{max-width:100%;overflow-x:hidden}
 
 /* telas médias: reduz colunas antes de virar mobile */
 @media(max-width:1180px){ .pgrid{grid-template-columns:repeat(2,1fr)} }
+/* telas largas: mais colunas de imóveis pra preencher */
+@media(min-width:1500px){ .pgrid{grid-template-columns:repeat(4,1fr)} }
+@media(min-width:1900px){ .pgrid{grid-template-columns:repeat(5,1fr)} }
 @media(max-width:1024px){
   .ifapp{grid-template-columns:208px 1fr}
   .wrap{padding:22px 20px 60px}
