@@ -16,6 +16,7 @@ const HISTORY = [
 const COMP = new Date().toISOString().slice(0, 7);
 const MESNOME = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const COMP_LABEL = `${MESNOME[+COMP.split('-')[1]]} de ${COMP.split('-')[0]}`;
+const BOLETO_FEE = 1.99;
 
 // ---------------- LOGIN ----------------
 const Login: React.FC<{ onIn: (u: any) => void }> = ({ onIn }) => {
@@ -271,7 +272,7 @@ const App: React.FC = () => {
         const p = props.find(x => x.id === lease.propertyId);
         await dbService.insert('payments', {
           leaseId: lease.id, tenantId: lease.tenantId, propertyId: lease.propertyId, ownerId: p?.ownerId || '',
-          amount: Number(lease.monthlyRent) || 0, competencia: COMP,
+          amount: Number(lease.monthlyRent) || 0, asaasFee: BOLETO_FEE, competencia: COMP,
           dueDate: `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`, status: 'RECEIVED', receivedAt: new Date().toISOString(),
         });
       }
@@ -333,9 +334,12 @@ const App: React.FC = () => {
   };
 
   // ---- dashboard chart helpers ----
-  const recAll = owners.reduce((s, o) => s + calcOwner(o).recebido, 0);
-  const despAll = expenses.reduce((s, e) => s + Number(e.amount || 0), 0);
-  const hist = [...HISTORY, { m: 'Jun', receb: recAll, desp: despAll }];
+  const chartMonths = Array.from({ length: 6 }, (_, i) => { const d = new Date(+COMP.split('-')[0], +COMP.split('-')[1] - 6 + i, 1); return d.toISOString().slice(0, 7); });
+  const hist = chartMonths.map(m => ({
+    m: MESNOME[+m.split('-')[1]].slice(0, 3),
+    receb: payments.filter(p => p.status === 'RECEIVED' && p.competencia === m).reduce((s, p) => s + Number(p.amount || 0), 0),
+    desp: expenses.filter(e => (e.date || '').slice(0, 7) === m).reduce((s, e) => s + Number(e.amount || 0), 0),
+  }));
   const maxv = Math.max(1, ...hist.map(h => Math.max(h.receb, h.desp)));
   const statusCount = (st: string) => props.filter(p => p.status === st).length;
   const donut = [
@@ -576,14 +580,15 @@ const App: React.FC = () => {
                 <div className="kpi glass"><div className="lbl">A receber</div><div className="v if-mono" style={{ color: 'var(--amber)' }}>{brl(previstoMes - recebidoMes)}</div></div>
                 <div className="kpi glass"><div className="lbl">Previsto</div><div className="v if-mono">{brl(previstoMes)}</div></div>
               </div>
-              <div className="note"><i className="fas fa-circle-info" /><span>Marque como <b>recebido</b> quando o inquilino pagar — só então entra no repasse. Em breve isso será automático via Asaas.</span></div>
+              <div className="note"><i className="fas fa-circle-info" /><span>O boleto do inquilino já inclui a <b>taxa Asaas de R$ 1,99</b> (aluguel + taxa). O que entra no repasse é o <b>aluguel líquido</b>. Marque como <b>recebido</b> quando o inquilino pagar.</span></div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
-                <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Valor</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
-                <tbody>{activeLeases.length === 0 ? <tr><td colSpan={6} className="emptyrow">Nenhuma locação ativa</td></tr> : activeLeases.map(l => {
+                <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Aluguel</th><th className="hidesm">Boleto (c/ taxa)</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
+                <tbody>{activeLeases.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhuma locação ativa</td></tr> : activeLeases.map(l => {
                   const t = tenants.find(x => x.id === l.tenantId); const p = props.find(x => x.id === l.propertyId);
                   const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && x.status === 'RECEIVED');
                   return <tr key={l.id}>
                     <td className="t">{t?.name || '—'}</td><td>{p?.title || '—'}</td><td className="if-mono">R$ {brl(l.monthlyRent)}</td>
+                    <td className="hidesm if-mono" style={{ color: 'var(--gray)' }}>R$ {brl(Number(l.monthlyRent || 0) + BOLETO_FEE)}</td>
                     <td className="hidesm if-mono">dia {l.dueDay || 5}</td>
                     <td>{pay ? <span className="pill ok">Recebido</span> : <span className="pill warn">Pendente</span>}</td>
                     <td style={{ textAlign: 'right' }}>{pay
@@ -602,7 +607,7 @@ const App: React.FC = () => {
             </div>
             {(() => {
               const o = owners.find(x => x.id === (repOwner || owners[0]?.id)); if (!o) return <div className="glass emptyrow">Cadastre um proprietário primeiro</div>;
-              const c = calcOwner(o); const recPays = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED'); const exps = expenses.filter(e => e.ownerId === o.id);
+              const c = calcOwner(o); const recPays = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED'); const exps = expenses.filter(e => e.ownerId === o.id); const totalFee = recPays.reduce((s, p) => s + Number(p.asaasFee || 0), 0);
               return <div className="glass" style={{ maxWidth: 720, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '24px 26px', background: 'var(--ink)', color: '#fff' }}>
                   <div><div style={{ fontWeight: 900, fontSize: 19 }}>Imobi<span style={{ color: '#a5b4fc' }}>Flow</span></div><div style={{ fontSize: 12, opacity: .85, marginTop: 6 }}>Extrato de Repasse</div></div>
@@ -612,6 +617,7 @@ const App: React.FC = () => {
                   <div style={{ marginBottom: 18 }}><div className="lbl">Proprietário</div><div style={{ fontWeight: 800, fontSize: 17, marginTop: 3 }}>{o.name}</div><div style={{ fontSize: 12, color: 'var(--gray)' }}>{o.phone}{o.pixKey ? ' · PIX: ' + o.pixKey : ''}</div></div>
                   <div className="lbl" style={{ marginBottom: 8 }}>Aluguéis recebidos</div>
                   {recPays.length ? recPays.map(pay => { const pr = props.find(x => x.id === pay.propertyId); return <div key={pay.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{pr?.title || 'Aluguel'}</span><span className="if-mono">R$ {brl(pay.amount)}</span></div>; }) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Nenhum recebimento no período</div>}
+                  {totalFee > 0 && <div style={{ fontSize: 11.5, color: 'var(--gray)', padding: '8px 0 0', fontWeight: 500 }}>Os boletos incluíram R$ {brl(totalFee)} de taxa Asaas (R$ 1,99/boleto), paga pelo inquilino e já descontada — não afeta o repasse.</div>}
                   <div className="lbl" style={{ margin: '18px 0 8px' }}>Despesas</div>
                   {exps.length ? exps.map(e => <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{fmtDate(e.date)} · {e.description || e.category}</span><span className="if-mono">− R$ {brl(e.amount)}</span></div>) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Sem despesas no período</div>}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, background: 'var(--emerald-50)', borderRadius: 14, padding: '15px 18px' }}><span className="lbl" style={{ color: 'var(--emerald)' }}>Líquido a repassar</span><span className="if-mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--emerald)' }}>R$ {brl(c.liquido)}</span></div>
