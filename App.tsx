@@ -68,6 +68,88 @@ const Login: React.FC<{ onIn: (u: any) => void }> = ({ onIn }) => {
   );
 };
 
+const CHKITEMS = ['Pintura e paredes', 'Elétrica e tomadas', 'Hidráulica e torneiras', 'Vidros e janelas', 'Limpeza geral', 'Chaves e controles'];
+const STEP_NAMES = ['Imóvel', 'Inquilino', 'Análise de crédito', 'Contrato', 'Vistoria', 'Revisão'];
+
+const Wizard: React.FC<{ properties: any[]; tenants: any[]; owners: any[]; onClose: () => void; onDone: (w: any) => void }> = ({ properties, tenants, owners, onClose, onDone }) => {
+  const avail = properties.filter(p => p.status === 'available');
+  const [step, setStep] = useState(0);
+  const today = new Date().toISOString().slice(0, 10);
+  const nextYear = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })();
+  const [w, setW] = useState<any>({
+    propertyId: avail[0]?.id || '', tenantMode: 'new', tenantId: tenants[0]?.id || '',
+    tName: '', tDoc: '', tPhone: '', creditResult: 'aprovado', creditScore: '', creditObs: '',
+    start: today, end: nextYear, rent: '', dueDay: 5, index: 'IPCA', guarantee: 'Caução',
+    checks: [true, true, true, false, false, false], vobs: '',
+  });
+  const set = (k: string, v: any) => setW((s: any) => ({ ...s, [k]: v }));
+  const oName = (id: string) => owners.find(o => o.id === id)?.name || '';
+  useEffect(() => { const p = properties.find(x => x.id === w.propertyId); if (p && !w.rent) set('rent', p.price); }, [w.propertyId]);
+
+  const next = () => {
+    if (step === 0 && !w.propertyId) return;
+    if (step === 1) { if (w.tenantMode === 'new' && !w.tName.trim()) return; if (w.tenantMode === 'existing' && !w.tenantId) return; }
+    if (step === STEP_NAMES.length - 1) { onDone(w); return; }
+    setStep(step + 1);
+  };
+  const toggleChk = (i: number) => set('checks', w.checks.map((c: boolean, idx: number) => idx === i ? !c : c));
+
+  return <div className="ov" onClick={e => { if ((e.target as any).className === 'ov') onClose(); }}>
+    <div className="modal" style={{ maxWidth: 520 }}>
+      <div className="mh"><h3><i className="fas fa-file-signature" /> Nova locação</h3><p>Passo {step + 1} de {STEP_NAMES.length} · {STEP_NAMES[step]}</p><div className="wizbar"><div style={{ width: `${(step + 1) / STEP_NAMES.length * 100}%` }} /></div></div>
+      <div className="mb">
+        {step === 0 && (avail.length === 0
+          ? <div className="emptyrow">Nenhum imóvel disponível. Cadastre um imóvel ou marque um como Disponível antes de iniciar.</div>
+          : <><p style={{ fontSize: 13, color: 'var(--gray)', marginBottom: 14 }}>Escolha o imóvel a ser alugado (só aparecem os Disponíveis).</p>
+            <div className="field-g" style={{ marginTop: 0 }}><label className="lbl">Imóvel disponível</label><select className="inp" value={w.propertyId} onChange={e => set('propertyId', e.target.value)}>{avail.map(p => <option key={p.id} value={p.id}>{p.title} · {oName(p.ownerId)}</option>)}</select></div></>)}
+        {step === 1 && <>
+          <div className="field-g" style={{ marginTop: 0 }}><label className="lbl">Inquilino</label><select className="inp" value={w.tenantMode} onChange={e => set('tenantMode', e.target.value)}><option value="new">Cadastrar novo</option><option value="existing">Já cadastrado</option></select></div>
+          {w.tenantMode === 'existing'
+            ? <div className="field-g"><label className="lbl">Selecione</label><select className="inp" value={w.tenantId} onChange={e => set('tenantId', e.target.value)}>{tenants.length === 0 ? <option value="">Nenhum cadastrado</option> : tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            : <><div className="field-g"><label className="lbl">Nome</label><input className="inp" value={w.tName} onChange={e => set('tName', e.target.value)} /></div>
+              <div style={{ display: 'flex', gap: 12 }}><div className="field-g" style={{ flex: 1 }}><label className="lbl">CPF/CNPJ</label><input className="inp" value={w.tDoc} onChange={e => set('tDoc', e.target.value)} /></div><div className="field-g" style={{ flex: 1 }}><label className="lbl">Telefone</label><input className="inp" value={w.tPhone} onChange={e => set('tPhone', e.target.value)} /></div></div>
+              <label className="lbl" style={{ display: 'block', margin: '14px 0 7px' }}>Documentos</label><div className="dz" onClick={() => alert('A Pasta Digital (upload de documentos) entra na próxima etapa.')}><i className="fas fa-cloud-arrow-up" /><div style={{ marginTop: 6 }}>Anexar RG/CPF e comprovante de renda</div></div></>}
+        </>}
+        {step === 2 && <>
+          <div className="field-g" style={{ marginTop: 0 }}><label className="lbl">Resultado da análise</label><select className="inp" value={w.creditResult} onChange={e => set('creditResult', e.target.value)}><option value="aprovado">Aprovado</option><option value="analise">Em análise</option><option value="reprovado">Reprovado</option></select></div>
+          <div className="field-g"><label className="lbl">Score (opcional)</label><input className="inp" value={w.creditScore} onChange={e => set('creditScore', e.target.value)} /></div>
+          <div className="field-g"><label className="lbl">Observações</label><textarea className="inp" rows={2} style={{ resize: 'vertical' }} value={w.creditObs} onChange={e => set('creditObs', e.target.value)} /></div>
+        </>}
+        {step === 3 && <>
+          <div style={{ display: 'flex', gap: 12 }}><div className="field-g" style={{ flex: 1, marginTop: 0 }}><label className="lbl">Início</label><input className="inp" type="date" value={w.start} onChange={e => set('start', e.target.value)} /></div><div className="field-g" style={{ flex: 1, marginTop: 0 }}><label className="lbl">Término</label><input className="inp" type="date" value={w.end} onChange={e => set('end', e.target.value)} /></div></div>
+          <div style={{ display: 'flex', gap: 12 }}><div className="field-g" style={{ flex: 1 }}><label className="lbl">Aluguel (R$)</label><input className="inp" type="number" value={w.rent} onChange={e => set('rent', e.target.value)} /></div><div className="field-g" style={{ width: 110 }}><label className="lbl">Dia venc.</label><input className="inp" type="number" value={w.dueDay} onChange={e => set('dueDay', e.target.value)} /></div></div>
+          <div style={{ display: 'flex', gap: 12 }}><div className="field-g" style={{ flex: 1 }}><label className="lbl">Reajuste</label><select className="inp" value={w.index} onChange={e => set('index', e.target.value)}><option>IPCA</option><option>IGP-M</option></select></div><div className="field-g" style={{ flex: 1 }}><label className="lbl">Garantia</label><select className="inp" value={w.guarantee} onChange={e => set('guarantee', e.target.value)}><option>Caução</option><option>Fiador</option><option>Seguro-fiança</option></select></div></div>
+        </>}
+        {step === 4 && <>
+          <p style={{ fontSize: 13, color: 'var(--gray)', marginBottom: 10 }}>Confira o estado de entrega do imóvel.</p>
+          {CHKITEMS.map((c, i) => <div key={i} className={'chk' + (w.checks[i] ? ' on' : '')} onClick={() => toggleChk(i)}><span className="bx"><i className="fas fa-check" /></span><span className="tx">{c}</span></div>)}
+          <div className="field-g"><label className="lbl">Observações</label><textarea className="inp" rows={2} style={{ resize: 'vertical' }} value={w.vobs} onChange={e => set('vobs', e.target.value)} /></div>
+        </>}
+        {step === 5 && (() => {
+          const p = properties.find(x => x.id === w.propertyId);
+          const tn = w.tenantMode === 'new' ? w.tName : (tenants.find(t => t.id === w.tenantId)?.name || '—');
+          const okc = w.checks.filter(Boolean).length;
+          const cl: any = { aprovado: 'Aprovado', analise: 'Em análise', reprovado: 'Reprovado' };
+          return <>
+            <div className="revrow"><span className="k">Imóvel</span><span className="v">{p?.title} · {oName(p?.ownerId)}</span></div>
+            <div className="revrow"><span className="k">Inquilino</span><span className="v">{tn || '—'}</span></div>
+            <div className="revrow"><span className="k">Crédito</span><span className="v">{cl[w.creditResult]}</span></div>
+            <div className="revrow"><span className="k">Contrato</span><span className="v">{w.start} a {w.end}</span></div>
+            <div className="revrow"><span className="k">Aluguel</span><span className="v">R$ {Number(w.rent || 0).toLocaleString('pt-BR')} · dia {w.dueDay}</span></div>
+            <div className="revrow"><span className="k">Reajuste / Garantia</span><span className="v">{w.index} · {w.guarantee}</span></div>
+            <div className="revrow"><span className="k">Vistoria</span><span className="v">{okc} de {CHKITEMS.length} itens</span></div>
+            <div className="note" style={{ marginTop: 14 }}><i className="fas fa-circle-info" /><span>Ao efetivar: o imóvel passa a <b>Alugado</b> e o contrato é criado.</span></div>
+          </>;
+        })()}
+      </div>
+      <div className="mf">
+        <button className="cancel" onClick={() => step === 0 ? onClose() : setStep(step - 1)}>{step === 0 ? 'Cancelar' : 'Voltar'}</button>
+        <button className="confirm" onClick={next}>{step === STEP_NAMES.length - 1 ? 'Efetivar locação' : 'Continuar'}</button>
+      </div>
+    </div>
+  </div>;
+};
+
 // ---------------- APP ----------------
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
@@ -77,6 +159,8 @@ const App: React.FC = () => {
   const [props, setProps] = useState<any[]>([]);
   const [tenants, setTenants] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [leases, setLeases] = useState<any[]>([]);
+  const [wizOpen, setWizOpen] = useState(false);
   const [form, setForm] = useState<any>(null);
   const [toast, setToast] = useState('');
   const [fImo, setFImo] = useState({ q: '', type: '', status: '', owner: '' });
@@ -88,11 +172,11 @@ const App: React.FC = () => {
 
   const loadAll = async () => {
     try {
-      const [o, p, t, e] = await Promise.all([
+      const [o, p, t, e, l] = await Promise.all([
         dbService.fetchData('owners'), dbService.fetchData('properties'),
-        dbService.fetchData('tenants'), dbService.fetchData('expenses'),
+        dbService.fetchData('tenants'), dbService.fetchData('expenses'), dbService.fetchData('leases'),
       ]);
-      setOwners(o); setProps(p); setTenants(t); setExpenses(e);
+      setOwners(o); setProps(p); setTenants(t); setExpenses(e); setLeases(l);
     } catch (err) { console.error(err); }
   };
   const notify = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2200); };
@@ -119,6 +203,24 @@ const App: React.FC = () => {
     const next = p.status === 'maintenance' ? 'available' : 'maintenance';
     await dbService.update('properties', p.id, { status: next }); await loadAll();
     notify(next === 'maintenance' ? 'Imóvel em manutenção' : 'Imóvel reativado');
+  };
+  const efetivarLocacao = async (w: any) => {
+    try {
+      let tenantId = w.tenantId;
+      if (w.tenantMode === 'new') {
+        const t = await dbService.insert('tenants', { name: w.tName || 'Novo inquilino', document: w.tDoc || '', phone: w.tPhone || '' });
+        tenantId = t.id;
+      }
+      await dbService.insert('leases', {
+        propertyId: w.propertyId, tenantId, startDate: w.start, endDate: w.end,
+        monthlyRent: Number(w.rent) || 0, dueDay: Number(w.dueDay) || 5, active: true, deposit: 0,
+        readjustIndex: w.index, guarantee: w.guarantee,
+        creditResult: w.creditResult, creditScore: w.creditScore, creditNotes: w.creditObs,
+        entryChecklist: JSON.stringify({ items: w.checks, notes: w.vobs }),
+      });
+      await dbService.update('properties', w.propertyId, { status: 'rented' });
+      setWizOpen(false); await loadAll(); notify('Locação efetivada · imóvel alugado ✓');
+    } catch (err) { console.error(err); notify('Erro ao efetivar a locação'); }
   };
 
   const calcOwner = (o: any) => {
@@ -287,7 +389,7 @@ const App: React.FC = () => {
           {screen === 'imoveis' && (() => {
             const list = props.filter(p => (!fImo.q || (p.title + ' ' + p.address).toLowerCase().includes(fImo.q.toLowerCase())) && (!fImo.type || p.type === fImo.type) && (!fImo.status || p.status === fImo.status) && (!fImo.owner || p.ownerId === fImo.owner));
             return <>
-              <div className="scrhead"><div className="ti">Imóveis <small>· {list.length} de {props.length}</small></div><button className="btn-g" onClick={() => openImovel()}><i className="fas fa-plus" /> Novo imóvel</button></div>
+              <div className="scrhead"><div className="ti">Imóveis <small>· {list.length} de {props.length}</small></div><div style={{ display: 'flex', gap: 8 }}><button className="btn-i" onClick={() => setWizOpen(true)}><i className="fas fa-file-signature" /> Nova locação</button><button className="btn-g" onClick={() => openImovel()}><i className="fas fa-plus" /> Novo imóvel</button></div></div>
               <div className="filters">
                 <div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar por título ou endereço..." value={fImo.q} onChange={e => setFImo({ ...fImo, q: e.target.value })} /></div>
                 <select value={fImo.type} onChange={e => setFImo({ ...fImo, type: e.target.value })}><option value="">Todos os tipos</option>{TIPOS.map(t => <option key={t}>{t}</option>)}</select>
@@ -335,11 +437,18 @@ const App: React.FC = () => {
               <div className="scrhead"><div className="ti">Inquilinos <small>· {tenants.length}</small></div><button className="btn-g" onClick={() => openTenant()}><i className="fas fa-plus" /> Novo inquilino</button></div>
               <div className="filters"><div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar inquilino..." value={fInq} onChange={e => setFInq(e.target.value)} /></div></div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
-                <thead><tr><th>Inquilino</th><th className="hidesm">Documento</th><th className="hidesm">Telefone</th><th style={{ textAlign: 'right' }}>Ações</th></tr></thead>
-                <tbody>{list.length === 0 ? <tr><td colSpan={4} className="emptyrow">Nenhum inquilino</td></tr> : list.map(t => <tr key={t.id}>
-                  <td className="t">{t.name}</td><td className="hidesm if-mono">{t.document || '—'}</td><td className="hidesm">{t.phone || '—'}</td>
-                  <td><div className="acts" style={{ justifyContent: 'flex-end' }}><button className="act" onClick={() => openTenant(t)}><i className="fas fa-pen" /></button><button className="act danger" onClick={() => remove('tenants', t.id, t.name)}><i className="fas fa-trash" /></button></div></td>
-                </tr>)}</tbody>
+                <thead><tr><th>Inquilino</th><th>Imóvel</th><th className="hidesm">Contrato até</th><th className="hidesm">Telefone</th><th style={{ textAlign: 'right' }}>Ações</th></tr></thead>
+                <tbody>{list.length === 0 ? <tr><td colSpan={5} className="emptyrow">Nenhum inquilino</td></tr> : list.map(t => {
+                  const lease = leases.find(l => l.tenantId === t.id && l.active);
+                  const pr = lease ? (props.find(p => p.id === lease.propertyId)?.title || '—') : null;
+                  return <tr key={t.id}>
+                    <td className="t">{t.name}</td>
+                    <td>{pr || <span className="pill vac">Sem contrato</span>}</td>
+                    <td className="hidesm if-mono">{lease ? fmtDate(lease.endDate) : '—'}</td>
+                    <td className="hidesm">{t.phone || '—'}</td>
+                    <td><div className="acts" style={{ justifyContent: 'flex-end' }}><button className="act" onClick={() => openTenant(t)}><i className="fas fa-pen" /></button><button className="act danger" onClick={() => remove('tenants', t.id, t.name)}><i className="fas fa-trash" /></button></div></td>
+                  </tr>;
+                })}</tbody>
               </table></div></div>
             </>;
           })()}
@@ -429,6 +538,8 @@ const App: React.FC = () => {
           <div className="mf"><button className="cancel" onClick={() => setForm(null)}>Cancelar</button><button className="confirm" onClick={save}>Salvar</button></div>
         </div>
       </div>}
+
+      {wizOpen && <Wizard properties={props} tenants={tenants} owners={owners} onClose={() => setWizOpen(false)} onDone={efetivarLocacao} />}
 
       {toast && <div className="toast"><i className="fas fa-check-circle" />{toast}</div>}
     </div>
