@@ -13,6 +13,9 @@ const HISTORY = [
   { m: 'Jan', receb: 11800, desp: 450 }, { m: 'Fev', receb: 12100, desp: 200 },
   { m: 'Mar', receb: 12300, desp: 980 }, { m: 'Abr', receb: 12750, desp: 540 }, { m: 'Mai', receb: 12750, desp: 120 },
 ];
+const COMP = new Date().toISOString().slice(0, 7);
+const MESNOME = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+const COMP_LABEL = `${MESNOME[+COMP.split('-')[1]]} de ${COMP.split('-')[0]}`;
 
 // ---------------- LOGIN ----------------
 const Login: React.FC<{ onIn: (u: any) => void }> = ({ onIn }) => {
@@ -160,7 +163,10 @@ const App: React.FC = () => {
   const [tenants, setTenants] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [leases, setLeases] = useState<any[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
   const [wizOpen, setWizOpen] = useState(false);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState<any>(null);
   const [toast, setToast] = useState('');
   const [fImo, setFImo] = useState({ q: '', type: '', status: '', owner: '' });
@@ -172,11 +178,11 @@ const App: React.FC = () => {
 
   const loadAll = async () => {
     try {
-      const [o, p, t, e, l] = await Promise.all([
+      const [o, p, t, e, l, pay] = await Promise.all([
         dbService.fetchData('owners'), dbService.fetchData('properties'),
-        dbService.fetchData('tenants'), dbService.fetchData('expenses'), dbService.fetchData('leases'),
+        dbService.fetchData('tenants'), dbService.fetchData('expenses'), dbService.fetchData('leases'), dbService.fetchData('payments'),
       ]);
-      setOwners(o); setProps(p); setTenants(t); setExpenses(e); setLeases(l);
+      setOwners(o); setProps(p); setTenants(t); setExpenses(e); setLeases(l); setPayments(pay);
     } catch (err) { console.error(err); }
   };
   const notify = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2200); };
@@ -225,7 +231,7 @@ const App: React.FC = () => {
 
   const calcOwner = (o: any) => {
     const ps = props.filter(p => p.ownerId === o.id && p.status === 'rented');
-    const recebido = ps.reduce((s, p) => s + Number(p.price || 0), 0);
+    const recebido = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED').reduce((s, p) => s + Number(p.amount || 0), 0);
     const desp = expenses.filter(e => e.ownerId === o.id).reduce((s, e) => s + Number(e.amount || 0), 0);
     const rate = Number(o.commissionRate ?? 10);
     const mode = o.commissionMode || 'deducted';
@@ -234,6 +240,44 @@ const App: React.FC = () => {
     return { recebido, desp, rate, mode, taxa, liquido, names: ps.map(p => p.title).join(' · ') || 'Sem imóveis alugados' };
   };
   const oName = (id: string) => owners.find(o => o.id === id)?.name || '—';
+
+  const uploadDoc = async (propertyId: string, file: File) => {
+    setUploading(true);
+    try {
+      const path = `${user.id}/${propertyId}/${Date.now()}-${file.name}`;
+      const stored = await dbService.uploadFile('documents', path, file);
+      const p = props.find(x => x.id === propertyId);
+      const docs = Array.isArray(p?.documents) ? p.documents : [];
+      await dbService.update('properties', propertyId, { documents: [...docs, { name: file.name, path: stored, at: new Date().toISOString() }] });
+      await loadAll(); notify('Documento anexado ✓');
+    } catch (err) { console.error(err); notify('Erro ao enviar o documento'); }
+    setUploading(false);
+  };
+  const openDoc = async (path: string) => {
+    const url = await dbService.getSignedUrl('documents', path);
+    if (url) window.open(url, '_blank'); else notify('Não foi possível abrir o documento');
+  };
+  const removeDoc = async (propertyId: string, idx: number) => {
+    if (!window.confirm('Remover este documento da pasta?')) return;
+    const p = props.find(x => x.id === propertyId);
+    const docs = [...(p?.documents || [])]; docs.splice(idx, 1);
+    await dbService.update('properties', propertyId, { documents: docs });
+    await loadAll(); notify('Documento removido');
+  };
+  const markPayment = async (lease: any, existing: any) => {
+    try {
+      if (existing) { await dbService.delete('payments', existing.id); }
+      else {
+        const p = props.find(x => x.id === lease.propertyId);
+        await dbService.insert('payments', {
+          leaseId: lease.id, tenantId: lease.tenantId, propertyId: lease.propertyId, ownerId: p?.ownerId || '',
+          amount: Number(lease.monthlyRent) || 0, competencia: COMP,
+          dueDate: `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`, status: 'RECEIVED', receivedAt: new Date().toISOString(),
+        });
+      }
+      await loadAll(); notify(existing ? 'Recebimento desfeito' : 'Pagamento recebido ✓');
+    } catch (err) { console.error(err); notify('Erro ao atualizar o pagamento'); }
+  };
 
   // ---- forms ----
   const setV = (k: string, v: any) => setForm((f: any) => ({ ...f, values: { ...f.values, [k]: v } }));
@@ -303,7 +347,7 @@ const App: React.FC = () => {
   const donutCirc = 2 * Math.PI * 52; let donutOff = 0;
 
   const nav = (id: string, icon: string, label: string) => (
-    <button key={id} className={screen === id ? 'active' : ''} onClick={() => setScreen(id)}><i className={'fas ' + icon} />{label}</button>
+    <button key={id} className={screen === id ? 'active' : ''} onClick={() => { setScreen(id); setDetailId(null); }}><i className={'fas ' + icon} />{label}</button>
   );
 
   return (
@@ -327,9 +371,6 @@ const App: React.FC = () => {
       <main className="main">
         <header className="top">
           <div><h1>{titles[screen][0]}</h1><div className="subt">{titles[screen][1]}</div></div>
-          <button className="btn-i" onClick={() => { if (screen === 'proprietarios') openOwner(); else if (screen === 'inquilinos') openTenant(); else if (screen === 'despesas') openDespesa(); else openImovel(); }}>
-            <i className="fas fa-plus" /> Novo
-          </button>
         </header>
         <div className="wrap">
 
@@ -341,12 +382,13 @@ const App: React.FC = () => {
               const scOwners = repOwner ? owners.filter(o => o.id === repOwner) : owners;
               const scProps = repOwner ? props.filter(p => p.ownerId === repOwner) : props;
               const rec = scOwners.reduce((s, o) => s + calcOwner(o).recebido, 0);
+              const previsto = leases.filter(l => l.active && scProps.some(p => p.id === l.propertyId)).reduce((s, l) => s + Number(l.monthlyRent || 0), 0);
               const rep = scOwners.reduce((s, o) => s + calcOwner(o).liquido, 0);
               const alug = scProps.filter(p => p.status === 'rented').length;
               const tot = scProps.filter(p => p.status !== 'maintenance').length;
               return <div className="kpis">
                 <div className="kpi glass"><div className="ic bg-ind"><i className="fas fa-house" /></div><div className="lbl">Imóveis Alugados</div><div className="v">{alug} <small>/{tot}</small></div><div className="m">{tot - alug} disponível(is)</div></div>
-                <div className="kpi glass"><div className="ic bg-eme"><i className="fas fa-sack-dollar" /></div><div className="lbl">Recebido no Mês</div><div className="v if-mono">{brl(rec)}</div><div className="m">aluguéis ativos</div></div>
+                <div className="kpi glass"><div className="ic bg-eme"><i className="fas fa-sack-dollar" /></div><div className="lbl">Recebido no Mês</div><div className="v if-mono">{brl(rec)}</div><div className="m">de R$ {brl(previsto)} previstos</div></div>
                 <div className="kpi glass"><div className="ic bg-amb"><i className="fas fa-right-left" /></div><div className="lbl">Saldo p/ Repasse</div><div className="v if-mono">{brl(rep)}</div><div className="m">{scOwners.length} proprietário(s)</div></div>
                 <div className="kpi glass"><div className="ic bg-red"><i className="fas fa-screwdriver-wrench" /></div><div className="lbl">Em Manutenção</div><div className="v">{scProps.filter(p => p.status === 'maintenance').length}</div><div className="m">imóveis parados</div></div>
               </div>;
@@ -387,6 +429,54 @@ const App: React.FC = () => {
           </>}
 
           {screen === 'imoveis' && (() => {
+            if (detailId) {
+              const p = props.find(x => x.id === detailId);
+              if (!p) return <div className="back" onClick={() => setDetailId(null)}><i className="fas fa-chevron-left" /> Voltar</div>;
+              const o = owners.find(x => x.id === p.ownerId);
+              const lease = leases.find(l => l.propertyId === p.id && l.active);
+              const tenant = lease ? tenants.find(t => t.id === lease.tenantId) : null;
+              const docs = Array.isArray(p.documents) ? p.documents : [];
+              const badge = p.status === 'maintenance' ? <span className="pill warn">Manutenção</span> : p.status === 'available' ? <span className="pill vac">Disponível</span> : <span className="pill ok">Alugado</span>;
+              return <>
+                <div className="back" onClick={() => setDetailId(null)}><i className="fas fa-chevron-left" /> Imóveis</div>
+                <div className="dh">
+                  <div><div className="ttl">{p.title}</div><div style={{ color: 'var(--gray)', fontSize: 13, marginTop: 4 }}>{p.address || '—'} · {o?.name || 'Sem proprietário'}{tenant ? ' · ' + tenant.name : ''}</div></div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{badge}<button className="btn-g" onClick={() => openImovel(p)}><i className="fas fa-pen" /> Editar</button></div>
+                </div>
+                <div className="grid2">
+                  <div className="glass">
+                    <div className="ph"><h3><span className="bar" />Contrato</h3>{lease ? <span className="pill ok">Ativo</span> : <span className="pill vac">Sem contrato</span>}</div>
+                    <div style={{ padding: '6px 18px 14px' }}>
+                      {lease ? <>
+                        <div className="fld"><span className="k">Inquilino</span><span className="v">{tenant?.name || '—'}</span></div>
+                        <div className="fld"><span className="k">Aluguel</span><span className="v if-mono">R$ {brl(lease.monthlyRent)}</span></div>
+                        <div className="fld"><span className="k">Início</span><span className="v if-mono">{fmtDate(lease.startDate)}</span></div>
+                        <div className="fld"><span className="k">Término</span><span className="v if-mono">{fmtDate(lease.endDate)}</span></div>
+                        <div className="fld"><span className="k">Reajuste</span><span className="v">{lease.readjustIndex || '—'}</span></div>
+                        <div className="fld"><span className="k">Garantia</span><span className="v">{lease.guarantee || '—'}</span></div>
+                        <div className="fld"><span className="k">Vencimento</span><span className="v if-mono">dia {lease.dueDay || '—'}</span></div>
+                      </> : <div style={{ padding: '14px 0', color: 'var(--gray)', fontSize: 13 }}>Nenhum contrato ativo. Use <b>Nova locação</b> na lista de imóveis para alugar.</div>}
+                    </div>
+                  </div>
+                  <div className="glass">
+                    <div className="ph"><h3><span className="bar" />Pasta Digital</h3><span className="lbl">{docs.length} arquivo(s)</span></div>
+                    <div style={{ padding: '14px 18px 18px' }}>
+                      {docs.map((d: any, i: number) => <div key={i} className="doc">
+                        <span className="fi"><i className={'fas ' + (/\.(png|jpe?g|webp|gif)$/i.test(d.name) ? 'fa-image' : 'fa-file-lines')} /></span>
+                        <div className="g"><div className="t">{d.name}</div><div className="s">{d.at ? fmtDate(d.at.slice(0, 10)) : ''}</div></div>
+                        <button className="act" title="Abrir" onClick={() => openDoc(d.path)}><i className="fas fa-eye" /></button>
+                        <button className="act danger" title="Remover" onClick={() => removeDoc(p.id, i)}><i className="fas fa-trash" /></button>
+                      </div>)}
+                      {docs.length === 0 && <div style={{ color: 'var(--faint)', fontSize: 12.5, fontWeight: 600, textAlign: 'center', padding: '8px 0 14px' }}>Nenhum documento ainda</div>}
+                      <label className="dz" style={{ display: 'block' }}>
+                        <i className="fas fa-cloud-arrow-up" /><div style={{ marginTop: 6 }}>{uploading ? 'Enviando...' : 'Clique para anexar (contrato, RG, CPF...)'}</div>
+                        <input type="file" style={{ display: 'none' }} disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) uploadDoc(p.id, f); (e.target as any).value = ''; }} />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </>;
+            }
             const list = props.filter(p => (!fImo.q || (p.title + ' ' + p.address).toLowerCase().includes(fImo.q.toLowerCase())) && (!fImo.type || p.type === fImo.type) && (!fImo.status || p.status === fImo.status) && (!fImo.owner || p.ownerId === fImo.owner));
             return <>
               <div className="scrhead"><div className="ti">Imóveis <small>· {list.length} de {props.length}</small></div><div style={{ display: 'flex', gap: 8 }}><button className="btn-i" onClick={() => setWizOpen(true)}><i className="fas fa-file-signature" /> Nova locação</button><button className="btn-g" onClick={() => openImovel()}><i className="fas fa-plus" /> Novo imóvel</button></div></div>
@@ -403,7 +493,7 @@ const App: React.FC = () => {
                   const badge = off ? <span className="badge pill warn">Manutenção</span> : p.status === 'available' ? <span className="badge pill vac">Disponível</span> : <span className="badge pill ok">Alugado</span>;
                   return <div key={p.id} className={'pcard glass' + (off ? ' off' : '')}>
                     <div className="cover" style={{ background: cover }}><i className={'fas ' + propIcon(p.type)} />{badge}</div>
-                    <div className="body" onClick={() => openImovel(p)}><div className="ttl">{p.title}</div><div className="addr">{p.address || '—'}</div><div className="meta"><div className="price if-mono">{brl(p.price)}<small>/mês</small></div><div className="own">{oName(p.ownerId).split(' ')[0]}</div></div></div>
+                    <div className="body" onClick={() => setDetailId(p.id)}><div className="ttl">{p.title}</div><div className="addr">{p.address || '—'}</div><div className="meta"><div className="price if-mono">{brl(p.price)}<small>/mês</small></div><div className="own">{oName(p.ownerId).split(' ')[0]}</div></div></div>
                     <div className="acts"><button className="act" title="Editar" onClick={() => openImovel(p)}><i className="fas fa-pen" /></button><button className={'act' + (off ? ' ok' : '')} title={off ? 'Reativar' : 'Manutenção'} onClick={() => setMaintenance(p)}><i className={'fas ' + (off ? 'fa-rotate-left' : 'fa-screwdriver-wrench')} /></button><button className="act danger" title="Excluir" onClick={() => remove('properties', p.id, `o imóvel "${p.title}"`)}><i className="fas fa-trash" /></button></div>
                   </div>;
                 })}</div>}
@@ -475,11 +565,35 @@ const App: React.FC = () => {
             </>;
           })()}
 
-          {screen === 'pagamentos' && <div className="glass" style={{ padding: 40, textAlign: 'center' }}>
-            <i className="fas fa-credit-card" style={{ fontSize: 34, color: 'var(--indigo)' }} />
-            <h3 style={{ margin: '14px 0 6px' }}>Cobranças</h3>
-            <p style={{ color: 'var(--gray)', maxWidth: 420, margin: '0 auto' }}>A tela de cobranças (com boleto/PIX via Asaas) entra na próxima etapa, ligada à confirmação automática de pagamento.</p>
-          </div>}
+          {screen === 'pagamentos' && (() => {
+            const activeLeases = leases.filter(l => l.active);
+            const recebidoMes = payments.filter(p => p.competencia === COMP && p.status === 'RECEIVED').reduce((s, p) => s + Number(p.amount || 0), 0);
+            const previstoMes = activeLeases.reduce((s, l) => s + Number(l.monthlyRent || 0), 0);
+            return <>
+              <div className="scrhead"><div className="ti">Pagamentos <small>· {COMP_LABEL}</small></div></div>
+              <div className="kpis" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
+                <div className="kpi glass"><div className="lbl">Recebido</div><div className="v if-mono" style={{ color: 'var(--emerald)' }}>{brl(recebidoMes)}</div></div>
+                <div className="kpi glass"><div className="lbl">A receber</div><div className="v if-mono" style={{ color: 'var(--amber)' }}>{brl(previstoMes - recebidoMes)}</div></div>
+                <div className="kpi glass"><div className="lbl">Previsto</div><div className="v if-mono">{brl(previstoMes)}</div></div>
+              </div>
+              <div className="note"><i className="fas fa-circle-info" /><span>Marque como <b>recebido</b> quando o inquilino pagar — só então entra no repasse. Em breve isso será automático via Asaas.</span></div>
+              <div className="glass tablewrap"><div className="tbl-scroll"><table>
+                <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Valor</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
+                <tbody>{activeLeases.length === 0 ? <tr><td colSpan={6} className="emptyrow">Nenhuma locação ativa</td></tr> : activeLeases.map(l => {
+                  const t = tenants.find(x => x.id === l.tenantId); const p = props.find(x => x.id === l.propertyId);
+                  const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && x.status === 'RECEIVED');
+                  return <tr key={l.id}>
+                    <td className="t">{t?.name || '—'}</td><td>{p?.title || '—'}</td><td className="if-mono">R$ {brl(l.monthlyRent)}</td>
+                    <td className="hidesm if-mono">dia {l.dueDay || 5}</td>
+                    <td>{pay ? <span className="pill ok">Recebido</span> : <span className="pill warn">Pendente</span>}</td>
+                    <td style={{ textAlign: 'right' }}>{pay
+                      ? <button className="btn-g" onClick={() => markPayment(l, pay)}>Desfazer</button>
+                      : <button className="btn-i" onClick={() => markPayment(l, null)}>Marcar recebido</button>}</td>
+                  </tr>;
+                })}</tbody>
+              </table></div></div>
+            </>;
+          })()}
 
           {screen === 'relatorios' && <>
             <div className="scrhead"><div className="ti">Relatório de fechamento <small>· para enviar ao proprietário</small></div></div>
@@ -488,16 +602,16 @@ const App: React.FC = () => {
             </div>
             {(() => {
               const o = owners.find(x => x.id === (repOwner || owners[0]?.id)); if (!o) return <div className="glass emptyrow">Cadastre um proprietário primeiro</div>;
-              const c = calcOwner(o); const ps = props.filter(p => p.ownerId === o.id && p.status === 'rented'); const exps = expenses.filter(e => e.ownerId === o.id);
+              const c = calcOwner(o); const recPays = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED'); const exps = expenses.filter(e => e.ownerId === o.id);
               return <div className="glass" style={{ maxWidth: 720, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '24px 26px', background: 'var(--ink)', color: '#fff' }}>
                   <div><div style={{ fontWeight: 900, fontSize: 19 }}>Imobi<span style={{ color: '#a5b4fc' }}>Flow</span></div><div style={{ fontSize: 12, opacity: .85, marginTop: 6 }}>Extrato de Repasse</div></div>
-                  <div style={{ textAlign: 'right', fontSize: 12, opacity: .85 }}>Competência<br /><b style={{ color: '#fff' }}>Junho / 2026</b></div>
+                  <div style={{ textAlign: 'right', fontSize: 12, opacity: .85 }}>Competência<br /><b style={{ color: '#fff' }}>{COMP_LABEL}</b></div>
                 </div>
                 <div style={{ padding: '22px 26px' }}>
                   <div style={{ marginBottom: 18 }}><div className="lbl">Proprietário</div><div style={{ fontWeight: 800, fontSize: 17, marginTop: 3 }}>{o.name}</div><div style={{ fontSize: 12, color: 'var(--gray)' }}>{o.phone}{o.pixKey ? ' · PIX: ' + o.pixKey : ''}</div></div>
                   <div className="lbl" style={{ marginBottom: 8 }}>Aluguéis recebidos</div>
-                  {ps.length ? ps.map(p => <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{p.title}</span><span className="if-mono">R$ {brl(p.price)}</span></div>) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Sem aluguéis no período</div>}
+                  {recPays.length ? recPays.map(pay => { const pr = props.find(x => x.id === pay.propertyId); return <div key={pay.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{pr?.title || 'Aluguel'}</span><span className="if-mono">R$ {brl(pay.amount)}</span></div>; }) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Nenhum recebimento no período</div>}
                   <div className="lbl" style={{ margin: '18px 0 8px' }}>Despesas</div>
                   {exps.length ? exps.map(e => <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{fmtDate(e.date)} · {e.description || e.category}</span><span className="if-mono">− R$ {brl(e.amount)}</span></div>) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Sem despesas no período</div>}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, background: 'var(--emerald-50)', borderRadius: 14, padding: '15px 18px' }}><span className="lbl" style={{ color: 'var(--emerald)' }}>Líquido a repassar</span><span className="if-mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--emerald)' }}>R$ {brl(c.liquido)}</span></div>
