@@ -16,7 +16,7 @@ const HISTORY = [
 const COMP = new Date().toISOString().slice(0, 7);
 const MESNOME = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const COMP_LABEL = `${MESNOME[+COMP.split('-')[1]]} de ${COMP.split('-')[0]}`;
-const BOLETO_FEE = 1.99;
+const BOLETO_FEE = 2.00;
 
 // ---------------- LOGIN ----------------
 const Login: React.FC<{ onIn: (u: any) => void }> = ({ onIn }) => {
@@ -154,6 +154,26 @@ const Wizard: React.FC<{ properties: any[]; tenants: any[]; owners: any[]; onClo
   </div>;
 };
 
+const EXITCHK = ['Paredes e pintura', 'Elétrica e tomadas', 'Hidráulica e torneiras', 'Vidros e janelas', 'Limpeza geral', 'Chaves e controles devolvidos'];
+const EncerrarModal: React.FC<{ lease: any; property: any; tenant: any; onClose: () => void; onConfirm: (p: any) => void }> = ({ lease, property, tenant, onClose, onConfirm }) => {
+  const [checks, setChecks] = useState([false, false, false, false, false, false]);
+  const [obs, setObs] = useState('');
+  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const toggle = (i: number) => setChecks(checks.map((c, idx) => idx === i ? !c : c));
+  return <div className="ov" onClick={e => { if ((e.target as any).className === 'ov') onClose(); }}>
+    <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="mh" style={{ background: 'var(--amber)' }}><h3><i className="fas fa-file-circle-xmark" /> Encerrar contrato</h3><p>{property?.title} · {tenant?.name || ''}</p></div>
+      <div className="mb">
+        <div className="field-g" style={{ marginTop: 0 }}><label className="lbl">Data de saída</label><input className="inp" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></div>
+        <label className="lbl" style={{ display: 'block', margin: '16px 0 4px' }}>Vistoria de saída</label>
+        {EXITCHK.map((c, i) => <div key={i} className={'chk' + (checks[i] ? ' on' : '')} onClick={() => toggle(i)}><span className="bx"><i className="fas fa-check" /></span><span className="tx">{c}</span></div>)}
+        <div className="field-g"><label className="lbl">Observações da saída</label><textarea className="inp" rows={2} style={{ resize: 'vertical' }} value={obs} onChange={e => setObs(e.target.value)} placeholder="Ex: parede riscada no quarto, combinar reparo..." /></div>
+      </div>
+      <div className="mf"><button className="cancel" onClick={onClose}>Cancelar</button><button className="confirm" style={{ background: 'var(--amber)' }} onClick={() => onConfirm({ endDate, checks, obs })}>Confirmar encerramento</button></div>
+    </div>
+  </div>;
+};
+
 // ---------------- APP ----------------
 const App: React.FC = () => {
   const [user, setUser] = useState<any>(null);
@@ -167,6 +187,7 @@ const App: React.FC = () => {
   const [payments, setPayments] = useState<any[]>([]);
   const [wizOpen, setWizOpen] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [exitLease, setExitLease] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState<any>(null);
   const [toast, setToast] = useState('');
@@ -196,6 +217,8 @@ const App: React.FC = () => {
       if (clean.price !== undefined) clean.price = Number(clean.price) || 0;
       if (clean.amount !== undefined) clean.amount = Number(clean.amount) || 0;
       if (clean.commissionRate !== undefined) clean.commissionRate = Number(clean.commissionRate) || 0;
+      if (clean.monthlyRent !== undefined) clean.monthlyRent = Number(clean.monthlyRent) || 0;
+      if (clean.dueDay !== undefined) clean.dueDay = Number(clean.dueDay) || 0;
       if (values.id) await dbService.update(coll, values.id, clean);
       else await dbService.insert(coll, clean);
       setForm(null); await loadAll(); notify('Salvo com sucesso ✓');
@@ -278,6 +301,25 @@ const App: React.FC = () => {
       }
       await loadAll(); notify(existing ? 'Recebimento desfeito' : 'Pagamento recebido ✓');
     } catch (err) { console.error(err); notify('Erro ao atualizar o pagamento'); }
+  };
+  const encerrarContrato = async (lease: any, payload: any) => {
+    try {
+      await dbService.update('leases', lease.id, { active: false, endedAt: payload.endDate, exitChecklist: JSON.stringify({ items: payload.checks, notes: payload.obs }) });
+      await dbService.update('properties', lease.propertyId, { status: 'available' });
+      setExitLease(null); await loadAll(); notify('Contrato encerrado · imóvel disponível');
+    } catch (err) { console.error(err); notify('Erro ao encerrar o contrato'); }
+  };
+  const openLease = (lease: any, renew?: boolean) => {
+    const base: any = { ...lease };
+    if (renew) { const st = lease.endDate || COMP + '-01'; const d = new Date(st + 'T00:00:00'); d.setFullYear(d.getFullYear() + 1); base.startDate = st; base.endDate = d.toISOString().slice(0, 10); }
+    setForm({
+      coll: 'leases', title: renew ? 'Renovar contrato' : 'Editar contrato', icon: 'fa-file-contract', values: base,
+      fields: [
+        { k: 'startDate', l: 'Início', t: 'date', half: true }, { k: 'endDate', l: 'Término', t: 'date', half: true },
+        { k: 'monthlyRent', l: 'Aluguel (R$)', t: 'number', half: true }, { k: 'dueDay', l: 'Dia venc.', t: 'number', half: true },
+        { k: 'readjustIndex', l: 'Reajuste', t: 'select', half: true, o: [['IPCA', 'IPCA'], ['IGP-M', 'IGP-M']] }, { k: 'guarantee', l: 'Garantia', t: 'select', half: true, o: [['Caução', 'Caução'], ['Fiador', 'Fiador'], ['Seguro-fiança', 'Seguro-fiança']] },
+      ],
+    });
   };
 
   // ---- forms ----
@@ -430,6 +472,21 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
+            {(() => {
+              const daysUntil = (d: string) => Math.ceil((new Date(d + 'T00:00:00').getTime() - Date.now()) / 86400000);
+              const venc = leases.filter(l => l.active && l.endDate).map(l => ({ l, days: daysUntil(l.endDate) })).filter(v => v.days <= 45).sort((a, b) => a.days - b.days);
+              return <div className="glass" style={{ marginTop: 18 }}>
+                <div className="ph"><h3><span className="bar" />Contratos chegando ao termo</h3><span className="lbl">próximos 45 dias</span></div>
+                <div>{venc.length === 0 ? <div className="emptyrow">Nenhum contrato vencendo nos próximos 45 dias</div> : venc.map(v => {
+                  const p = props.find(x => x.id === v.l.propertyId); const t = tenants.find(x => x.id === v.l.tenantId);
+                  return <div key={v.l.id} className="row" style={{ cursor: 'pointer' }} onClick={() => { setScreen('imoveis'); setDetailId(v.l.propertyId); }}>
+                    <span className="ic bg-amb"><i className="fas fa-file-contract" /></span>
+                    <div className="g"><div className="t">{p?.title || '—'} — {t?.name || '—'}</div><div className="s">Vence {fmtDate(v.l.endDate)}</div></div>
+                    <span className={'pill ' + (v.days < 0 ? 'over' : 'warn')}>{v.days < 0 ? `vencido há ${-v.days}d` : `${v.days} dias`}</span>
+                  </div>;
+                })}</div>
+              </div>;
+            })()}
           </>}
 
           {screen === 'imoveis' && (() => {
@@ -459,6 +516,11 @@ const App: React.FC = () => {
                         <div className="fld"><span className="k">Reajuste</span><span className="v">{lease.readjustIndex || '—'}</span></div>
                         <div className="fld"><span className="k">Garantia</span><span className="v">{lease.guarantee || '—'}</span></div>
                         <div className="fld"><span className="k">Vencimento</span><span className="v if-mono">dia {lease.dueDay || '—'}</span></div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
+                          <button className="btn-g" onClick={() => openLease(lease)}><i className="fas fa-pen" /> Editar</button>
+                          <button className="btn-g" onClick={() => openLease(lease, true)}><i className="fas fa-rotate" /> Renovar</button>
+                          <button className="btn-g" style={{ color: 'var(--amber)', borderColor: '#f0d9b0' }} onClick={() => setExitLease(lease)}><i className="fas fa-file-circle-xmark" /> Encerrar</button>
+                        </div>
                       </> : <div style={{ padding: '14px 0', color: 'var(--gray)', fontSize: 13 }}>Nenhum contrato ativo. Use <b>Nova locação</b> na lista de imóveis para alugar.</div>}
                     </div>
                   </div>
@@ -580,7 +642,7 @@ const App: React.FC = () => {
                 <div className="kpi glass"><div className="lbl">A receber</div><div className="v if-mono" style={{ color: 'var(--amber)' }}>{brl(previstoMes - recebidoMes)}</div></div>
                 <div className="kpi glass"><div className="lbl">Previsto</div><div className="v if-mono">{brl(previstoMes)}</div></div>
               </div>
-              <div className="note"><i className="fas fa-circle-info" /><span>O boleto do inquilino já inclui a <b>taxa Asaas de R$ 1,99</b> (aluguel + taxa). O que entra no repasse é o <b>aluguel líquido</b>. Marque como <b>recebido</b> quando o inquilino pagar.</span></div>
+              <div className="note"><i className="fas fa-circle-info" /><span>O boleto do inquilino já inclui a <b>taxa Asaas de R$ 2,00</b> (aluguel + taxa). O que entra no repasse é o <b>aluguel líquido</b>. Marque como <b>recebido</b> quando o inquilino pagar.</span></div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Aluguel</th><th className="hidesm">Boleto (c/ taxa)</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
                 <tbody>{activeLeases.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhuma locação ativa</td></tr> : activeLeases.map(l => {
@@ -617,7 +679,7 @@ const App: React.FC = () => {
                   <div style={{ marginBottom: 18 }}><div className="lbl">Proprietário</div><div style={{ fontWeight: 800, fontSize: 17, marginTop: 3 }}>{o.name}</div><div style={{ fontSize: 12, color: 'var(--gray)' }}>{o.phone}{o.pixKey ? ' · PIX: ' + o.pixKey : ''}</div></div>
                   <div className="lbl" style={{ marginBottom: 8 }}>Aluguéis recebidos</div>
                   {recPays.length ? recPays.map(pay => { const pr = props.find(x => x.id === pay.propertyId); return <div key={pay.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{pr?.title || 'Aluguel'}</span><span className="if-mono">R$ {brl(pay.amount)}</span></div>; }) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Nenhum recebimento no período</div>}
-                  {totalFee > 0 && <div style={{ fontSize: 11.5, color: 'var(--gray)', padding: '8px 0 0', fontWeight: 500 }}>Os boletos incluíram R$ {brl(totalFee)} de taxa Asaas (R$ 1,99/boleto), paga pelo inquilino e já descontada — não afeta o repasse.</div>}
+                  {totalFee > 0 && <div style={{ fontSize: 11.5, color: 'var(--gray)', padding: '8px 0 0', fontWeight: 500 }}>Os boletos incluíram R$ {brl(totalFee)} de taxa Asaas (R$ 2,00/boleto), paga pelo inquilino e já descontada — não afeta o repasse.</div>}
                   <div className="lbl" style={{ margin: '18px 0 8px' }}>Despesas</div>
                   {exps.length ? exps.map(e => <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{fmtDate(e.date)} · {e.description || e.category}</span><span className="if-mono">− R$ {brl(e.amount)}</span></div>) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Sem despesas no período</div>}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, background: 'var(--emerald-50)', borderRadius: 14, padding: '15px 18px' }}><span className="lbl" style={{ color: 'var(--emerald)' }}>Líquido a repassar</span><span className="if-mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--emerald)' }}>R$ {brl(c.liquido)}</span></div>
@@ -640,9 +702,7 @@ const App: React.FC = () => {
         <div className="modal">
           <div className="mh"><h3><i className={'fas ' + form.icon} /> {form.title}</h3></div>
           <div className="mb">
-            {form.fields.map((f: any, i: number) => {
-              const inGroup = f.half && form.fields[i - 1]?.half;
-              if (inGroup) return null;
+            {(() => {
               const renderField = (fld: any) => (
                 <div className="field-g" style={{ marginTop: 0, flex: 1 }} key={fld.k}>
                   <label className="lbl">{fld.l}</label>
@@ -651,15 +711,21 @@ const App: React.FC = () => {
                     : <input className="inp" type={fld.t} value={form.values[fld.k] ?? ''} onChange={e => setV(fld.k, e.target.value)} />}
                 </div>
               );
-              if (f.half && form.fields[i + 1]?.half) return <div key={i} style={{ display: 'flex', gap: 12, marginTop: 14 }}>{renderField(f)}{renderField(form.fields[i + 1])}</div>;
-              return <div key={i} style={{ marginTop: 14 }}>{renderField(f)}</div>;
-            })}
+              const rows: any[] = []; const flds = form.fields;
+              for (let i = 0; i < flds.length;) {
+                if (flds[i].half && flds[i + 1]?.half) { rows.push(<div key={i} style={{ display: 'flex', gap: 12, marginTop: 14 }}>{renderField(flds[i])}{renderField(flds[i + 1])}</div>); i += 2; }
+                else { rows.push(<div key={i} style={{ marginTop: 14 }}>{renderField(flds[i])}</div>); i += 1; }
+              }
+              return rows;
+            })()}
           </div>
           <div className="mf"><button className="cancel" onClick={() => setForm(null)}>Cancelar</button><button className="confirm" onClick={save}>Salvar</button></div>
         </div>
       </div>}
 
       {wizOpen && <Wizard properties={props} tenants={tenants} owners={owners} onClose={() => setWizOpen(false)} onDone={efetivarLocacao} />}
+
+      {exitLease && <EncerrarModal lease={exitLease} property={props.find(p => p.id === exitLease.propertyId)} tenant={tenants.find(t => t.id === exitLease.tenantId)} onClose={() => setExitLease(null)} onConfirm={(payload) => encerrarContrato(exitLease, payload)} />}
 
       {toast && <div className="toast"><i className="fas fa-check-circle" />{toast}</div>}
     </div>
