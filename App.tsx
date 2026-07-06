@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import './src/app.css';
 import { dbService } from './src/services/dbService';
+import fbApp from './src/firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { PropertyType, ExpenseCategory } from './types';
+
+const fns = getFunctions(fbApp, 'southamerica-east1');
 
 const brl = (n: any) => Number(n || 0).toLocaleString('pt-BR');
 const TIPOS = Object.values(PropertyType);
@@ -301,6 +305,24 @@ const App: React.FC = () => {
       }
       await loadAll(); notify(existing ? 'Recebimento desfeito' : 'Pagamento recebido ✓');
     } catch (err) { console.error(err); notify('Erro ao atualizar o pagamento'); }
+  };
+  const gerarCobranca = async (lease: any) => {
+    try {
+      notify('Gerando cobrança no Asaas...');
+      const fn = httpsCallable(fns, 'createAsaasCharge');
+      const dueDate = `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`;
+      const res: any = await fn({ leaseId: lease.id, tenantId: lease.tenantId, amount: Number(lease.monthlyRent) || 0, dueDate, billingType: 'BOLETO' });
+      await loadAll(); notify('Cobrança gerada ✓');
+      if (res?.data?.invoiceUrl) window.open(res.data.invoiceUrl, '_blank');
+    } catch (err: any) { console.error(err); notify('Erro ao gerar: ' + (err?.message || 'falha')); }
+  };
+  const confirmarPag = async (pay: any) => {
+    try { await dbService.update('payments', pay.id, { status: 'RECEIVED', receivedAt: new Date().toISOString() }); await loadAll(); notify('Pagamento recebido ✓'); }
+    catch { notify('Erro ao confirmar'); }
+  };
+  const desfazerPag = async (pay: any) => {
+    try { if (pay.asaasPaymentId) await dbService.update('payments', pay.id, { status: 'PENDING' }); else await dbService.delete('payments', pay.id); await loadAll(); notify('Desfeito'); }
+    catch { notify('Erro ao desfazer'); }
   };
   const encerrarContrato = async (lease: any, payload: any) => {
     try {
@@ -642,20 +664,31 @@ const App: React.FC = () => {
                 <div className="kpi glass"><div className="lbl">A receber</div><div className="v if-mono" style={{ color: 'var(--amber)' }}>{brl(previstoMes - recebidoMes)}</div></div>
                 <div className="kpi glass"><div className="lbl">Previsto</div><div className="v if-mono">{brl(previstoMes)}</div></div>
               </div>
-              <div className="note"><i className="fas fa-circle-info" /><span>O boleto do inquilino já inclui a <b>taxa Asaas de R$ 2,00</b> (aluguel + taxa). O que entra no repasse é o <b>aluguel líquido</b>. Marque como <b>recebido</b> quando o inquilino pagar.</span></div>
+              <div className="note"><i className="fas fa-circle-info" /><span><b>Gerar boleto</b> cria a cobrança no Asaas; quando o inquilino paga, vira <b>Recebido</b> sozinho. Você também pode marcar manualmente. O boleto inclui a taxa Asaas de R$ 2,00.</span></div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Aluguel</th><th className="hidesm">Boleto (c/ taxa)</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
                 <tbody>{activeLeases.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhuma locação ativa</td></tr> : activeLeases.map(l => {
                   const t = tenants.find(x => x.id === l.tenantId); const p = props.find(x => x.id === l.propertyId);
-                  const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && x.status === 'RECEIVED');
+                  const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP);
+                  const received = pay?.status === 'RECEIVED';
                   return <tr key={l.id}>
                     <td className="t">{t?.name || '—'}</td><td>{p?.title || '—'}</td><td className="if-mono">R$ {brl(l.monthlyRent)}</td>
                     <td className="hidesm if-mono" style={{ color: 'var(--gray)' }}>R$ {brl(Number(l.monthlyRent || 0) + BOLETO_FEE)}</td>
                     <td className="hidesm if-mono">dia {l.dueDay || 5}</td>
-                    <td>{pay ? <span className="pill ok">Recebido</span> : <span className="pill warn">Pendente</span>}</td>
-                    <td style={{ textAlign: 'right' }}>{pay
-                      ? <button className="btn-g" onClick={() => markPayment(l, pay)}>Desfazer</button>
-                      : <button className="btn-i" onClick={() => markPayment(l, null)}>Marcar recebido</button>}</td>
+                    <td>{received ? <span className="pill ok">Recebido</span> : pay ? <span className="pill idg">Aguardando</span> : <span className="pill warn">Pendente</span>}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div className="acts" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        {received ? <button className="btn-g" onClick={() => desfazerPag(pay)}>Desfazer</button>
+                          : pay ? <>
+                            {pay.invoiceUrl && pay.invoiceUrl !== '#' && <button className="btn-g" onClick={() => window.open(pay.invoiceUrl, '_blank')}>Ver boleto</button>}
+                            <button className="btn-i" onClick={() => confirmarPag(pay)}>Marcar recebido</button>
+                          </>
+                            : <>
+                              <button className="btn-i" onClick={() => gerarCobranca(l)}>Gerar boleto</button>
+                              <button className="btn-g" onClick={() => markPayment(l, null)}>Marcar recebido</button>
+                            </>}
+                      </div>
+                    </td>
                   </tr>;
                 })}</tbody>
               </table></div></div>
