@@ -20,6 +20,9 @@ const HISTORY = [
 const COMP = new Date().toISOString().slice(0, 7);
 const MESNOME = ['', 'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const COMP_LABEL = `${MESNOME[+COMP.split('-')[1]]} de ${COMP.split('-')[0]}`;
+const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => { const d = new Date(+COMP.split('-')[0], +COMP.split('-')[1] - 1 - i, 1); return d.toISOString().slice(0, 7); });
+const monthLabel = (m: string) => `${MESNOME[+m.split('-')[1]]} de ${m.split('-')[0]}`;
+const recMonthOf = (p: any) => (p.receivedAt ? String(p.receivedAt).slice(0, 7) : p.competencia);
 const BOLETO_FEE = 2.00;
 
 // ---------------- LOGIN ----------------
@@ -205,16 +208,18 @@ const App: React.FC = () => {
   const [fInq, setFInq] = useState('');
   const [fDesp, setFDesp] = useState({ q: '', cat: '', owner: '' });
   const [repOwner, setRepOwner] = useState('');
+  const [selMonth, setSelMonth] = useState(COMP);
+  const [closings, setClosings] = useState<any[]>([]);
 
   useEffect(() => { (async () => { const u = await dbService.getMe(); setUser(u); if (u) await loadAll(); setBooting(false); })(); }, []);
 
   const loadAll = async () => {
     try {
-      const [o, p, t, e, l, pay] = await Promise.all([
+      const [o, p, t, e, l, pay, cl] = await Promise.all([
         dbService.fetchData('owners'), dbService.fetchData('properties'),
-        dbService.fetchData('tenants'), dbService.fetchData('expenses'), dbService.fetchData('leases'), dbService.fetchData('payments'),
+        dbService.fetchData('tenants'), dbService.fetchData('expenses'), dbService.fetchData('leases'), dbService.fetchData('payments'), dbService.fetchData('closings'),
       ]);
-      setOwners(o); setProps(p); setTenants(t); setExpenses(e); setLeases(l); setPayments(pay);
+      setOwners(o); setProps(p); setTenants(t); setExpenses(e); setLeases(l); setPayments(pay); setClosings(cl);
     } catch (err) { console.error(err); }
   };
   const notify = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2200); };
@@ -275,15 +280,24 @@ const App: React.FC = () => {
     } catch (err) { console.error(err); notify('Erro ao efetivar a locação'); }
   };
 
-  const calcOwner = (o: any) => {
+  const calcOwner = (o: any, month: string) => {
     const ps = props.filter(p => p.ownerId === o.id && p.status === 'rented');
-    const recebido = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0);
-    const desp = expenses.filter(e => e.ownerId === o.id).reduce((s, e) => s + Number(e.amount || 0), 0);
+    const recebido = payments.filter(p => p.ownerId === o.id && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit' && recMonthOf(p) === month).reduce((s, p) => s + Number(p.amount || 0), 0);
+    const desp = expenses.filter(e => e.ownerId === o.id && String(e.date || '').slice(0, 7) === month).reduce((s, e) => s + Number(e.amount || 0), 0);
     const rate = Number(o.commissionRate ?? 10);
     const mode = o.commissionMode || 'deducted';
     const taxa = Math.round(recebido * rate / 100);
     const liquido = mode === 'deducted' ? recebido - desp - taxa : recebido - desp;
     return { recebido, desp, rate, mode, taxa, liquido, names: ps.map(p => p.title).join(' · ') || 'Sem imóveis alugados' };
+  };
+  const fecharMes = async (o: any, month: string, calc: any) => {
+    try { await dbService.insert('closings', { ownerId: o.id, month, recebido: calc.recebido, desp: calc.desp, taxa: calc.taxa, liquido: calc.liquido, rate: calc.rate, mode: calc.mode, closedAt: new Date().toISOString() }); await loadAll(); notify('Mês fechado ✓'); }
+    catch (err) { console.error(err); notify('Erro ao fechar o mês'); }
+  };
+  const reabrirMes = async (closing: any) => {
+    if (!window.confirm('Reabrir este mês? O fechamento salvo será removido e voltará a ser calculado ao vivo.')) return;
+    try { await dbService.delete('closings', closing.id); await loadAll(); notify('Mês reaberto'); }
+    catch { notify('Erro ao reabrir'); }
   };
   const oName = (id: string) => owners.find(o => o.id === id)?.name || '—';
 
@@ -419,7 +433,7 @@ const App: React.FC = () => {
   const chartMonths = Array.from({ length: 6 }, (_, i) => { const d = new Date(+COMP.split('-')[0], +COMP.split('-')[1] - 6 + i, 1); return d.toISOString().slice(0, 7); });
   const hist = chartMonths.map(m => ({
     m: MESNOME[+m.split('-')[1]].slice(0, 3),
-    receb: payments.filter(p => p.status === 'RECEIVED' && p.competencia === m && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0),
+    receb: payments.filter(p => p.status === 'RECEIVED' && recMonthOf(p) === m && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0),
     desp: expenses.filter(e => (e.date || '').slice(0, 7) === m).reduce((s, e) => s + Number(e.amount || 0), 0),
   }));
   const maxv = Math.max(1, ...hist.map(h => Math.max(h.receb, h.desp)));
@@ -462,14 +476,15 @@ const App: React.FC = () => {
 
           {screen === 'dashboard' && <>
             <div className="filters">
+              <select value={selMonth} onChange={e => setSelMonth(e.target.value)}>{MONTH_OPTIONS.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>
               <select value={repOwner} onChange={e => setRepOwner(e.target.value)}><option value="">Todos os proprietários</option>{owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
             </div>
             {(() => {
               const scOwners = repOwner ? owners.filter(o => o.id === repOwner) : owners;
               const scProps = repOwner ? props.filter(p => p.ownerId === repOwner) : props;
-              const rec = scOwners.reduce((s, o) => s + calcOwner(o).recebido, 0);
+              const rec = scOwners.reduce((s, o) => s + calcOwner(o, selMonth).recebido, 0);
               const previsto = leases.filter(l => l.active && scProps.some(p => p.id === l.propertyId)).reduce((s, l) => s + Number(l.monthlyRent || 0), 0);
-              const rep = scOwners.reduce((s, o) => s + calcOwner(o).liquido, 0);
+              const rep = scOwners.reduce((s, o) => s + calcOwner(o, selMonth).liquido, 0);
               const alug = scProps.filter(p => p.status === 'rented').length;
               const tot = scProps.filter(p => p.status !== 'maintenance').length;
               return <div className="kpis">
@@ -622,7 +637,7 @@ const App: React.FC = () => {
             <div className="scrhead"><div className="ti">Proprietários <small>· fechamento do mês</small></div><button className="btn-g" onClick={() => openOwner()}><i className="fas fa-plus" /> Novo proprietário</button></div>
             <div className="note"><i className="fas fa-circle-info" /><span>Cada proprietário tem sua regra de comissão. No modo <b>abatida</b> a comissão sai antes do repasse; no modo <b>faturada</b> repassa o valor cheio e você cobra depois.</span></div>
             {owners.length === 0 ? <div className="glass emptyrow">Nenhum proprietário cadastrado</div> : owners.map(o => {
-              const c = calcOwner(o);
+              const c = calcOwner(o, COMP);
               return <div key={o.id} className="glass repcard">
                 <div className="reph"><span className="av">{initials(o.name)}</span><div className="g"><div className="nm">{o.name}</div><div className="md">{c.names}</div></div>
                   {c.mode === 'deducted' ? <span className="pill ok">Abatida · {c.rate}%</span> : <span className="pill idg">Faturada · {c.rate}%</span>}
@@ -729,24 +744,39 @@ const App: React.FC = () => {
             <div className="scrhead"><div className="ti">Relatório de fechamento <small>· para enviar ao proprietário</small></div></div>
             <div className="filters">
               <select value={repOwner || owners[0]?.id || ''} onChange={e => setRepOwner(e.target.value)}>{owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
+              <select value={selMonth} onChange={e => setSelMonth(e.target.value)}>{MONTH_OPTIONS.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>
             </div>
             {(() => {
               const o = owners.find(x => x.id === (repOwner || owners[0]?.id)); if (!o) return <div className="glass emptyrow">Cadastre um proprietário primeiro</div>;
-              const c = calcOwner(o); const recPays = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit'); const exps = expenses.filter(e => e.ownerId === o.id); const totalFee = recPays.reduce((s, p) => s + Number(p.asaasFee || 0), 0);
+              const closing = closings.find(cl => cl.ownerId === o.id && cl.month === selMonth);
+              const live = calcOwner(o, selMonth);
+              const c = closing || live;
+              const recPays = payments.filter(p => p.ownerId === o.id && recMonthOf(p) === selMonth && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit');
+              const exps = expenses.filter(e => e.ownerId === o.id && String(e.date || '').slice(0, 7) === selMonth);
+              const totalFee = recPays.reduce((s, p) => s + Number(p.asaasFee || 0), 0);
               return <div className="glass" style={{ maxWidth: 720, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '24px 26px', background: 'var(--ink)', color: '#fff' }}>
                   <div><div style={{ fontWeight: 900, fontSize: 19 }}>Imobi<span style={{ color: '#a5b4fc' }}>Flow</span></div><div style={{ fontSize: 12, opacity: .85, marginTop: 6 }}>Extrato de Repasse</div></div>
-                  <div style={{ textAlign: 'right', fontSize: 12, opacity: .85 }}>Competência<br /><b style={{ color: '#fff' }}>{COMP_LABEL}</b></div>
+                  <div style={{ textAlign: 'right', fontSize: 12, opacity: .85 }}>Competência<br /><b style={{ color: '#fff' }}>{monthLabel(selMonth)}</b></div>
                 </div>
                 <div style={{ padding: '22px 26px' }}>
-                  <div style={{ marginBottom: 18 }}><div className="lbl">Proprietário</div><div style={{ fontWeight: 800, fontSize: 17, marginTop: 3 }}>{o.name}</div><div style={{ fontSize: 12, color: 'var(--gray)' }}>{o.phone}{o.pixKey ? ' · PIX: ' + o.pixKey : ''}</div></div>
-                  <div className="lbl" style={{ marginBottom: 8 }}>Aluguéis recebidos</div>
-                  {recPays.length ? recPays.map(pay => { const pr = props.find(x => x.id === pay.propertyId); return <div key={pay.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{pr?.title || 'Aluguel'}</span><span className="if-mono">R$ {brl(pay.amount)}</span></div>; }) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Nenhum recebimento no período</div>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+                    <div><div className="lbl">Proprietário</div><div style={{ fontWeight: 800, fontSize: 17, marginTop: 3 }}>{o.name}</div><div style={{ fontSize: 12, color: 'var(--gray)' }}>{o.phone}{o.pixKey ? ' · PIX: ' + o.pixKey : ''}</div></div>
+                    {closing && <span className="pill ok"><i className="fas fa-lock" /> Fechado</span>}
+                  </div>
+                  <div className="lbl" style={{ marginBottom: 8 }}>Aluguéis recebidos no mês</div>
+                  {recPays.length ? recPays.map(pay => { const pr = props.find(x => x.id === pay.propertyId); return <div key={pay.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{pr?.title || 'Aluguel'}</span><span className="if-mono">R$ {brl(pay.amount)}</span></div>; }) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Nenhum recebimento neste mês</div>}
                   {totalFee > 0 && <div style={{ fontSize: 11.5, color: 'var(--gray)', padding: '8px 0 0', fontWeight: 500 }}>Os boletos incluíram R$ {brl(totalFee)} de taxa Asaas (R$ 2,00/boleto), paga pelo inquilino e já descontada — não afeta o repasse.</div>}
                   <div className="lbl" style={{ margin: '18px 0 8px' }}>Despesas</div>
-                  {exps.length ? exps.map(e => <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{fmtDate(e.date)} · {e.description || e.category}</span><span className="if-mono">− R$ {brl(e.amount)}</span></div>) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Sem despesas no período</div>}
+                  {exps.length ? exps.map(e => <div key={e.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid var(--line2)', fontSize: 13.5 }}><span>{fmtDate(e.date)} · {e.description || e.category}</span><span className="if-mono">− R$ {brl(e.amount)}</span></div>) : <div style={{ color: 'var(--gray)', fontSize: 13, padding: '6px 0' }}>Sem despesas neste mês</div>}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 18, background: 'var(--emerald-50)', borderRadius: 14, padding: '15px 18px' }}><span className="lbl" style={{ color: 'var(--emerald)' }}>Líquido a repassar</span><span className="if-mono" style={{ fontSize: 22, fontWeight: 800, color: 'var(--emerald)' }}>R$ {brl(c.liquido)}</span></div>
-                  <div style={{ marginTop: 16, display: 'flex', gap: 10 }}><button className="btn-g" onClick={() => window.print()}><i className="fas fa-print" /> Imprimir / PDF</button><button className="btn-g" onClick={() => notify('Enviaria ao proprietário')}><i className="fas fa-paper-plane" /> Enviar</button></div>
+                  <div style={{ marginTop: 16, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button className="btn-g" onClick={() => window.print()}><i className="fas fa-print" /> Imprimir / PDF</button>
+                    {closing
+                      ? <button className="btn-g" onClick={() => reabrirMes(closing)}><i className="fas fa-lock-open" /> Reabrir mês</button>
+                      : <button className="btn-i" onClick={() => fecharMes(o, selMonth, live)}><i className="fas fa-lock" /> Fechar mês</button>}
+                  </div>
+                  {closing && <div style={{ fontSize: 11.5, color: 'var(--gray)', marginTop: 10, fontWeight: 500 }}>Mês fechado em {fmtDate(String(closing.closedAt).slice(0, 10))}. Os valores estão congelados — atrasos pagos depois entram no mês em que forem pagos.</div>}
                 </div>
               </div>;
             })()}
