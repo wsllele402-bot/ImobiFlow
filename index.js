@@ -34,7 +34,7 @@ exports.createAsaasCharge = onCall(
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Faça login para gerar cobranças.");
 
-    const { tenantId, leaseId, amount, dueDate, billingType = "BOLETO" } = request.data || {};
+    const { tenantId, leaseId, amount, dueDate, billingType = "BOLETO", kind = "rent", description = "Aluguel" } = request.data || {};
     if (!tenantId || !amount || !dueDate) throw new HttpsError("invalid-argument", "Dados incompletos.");
 
     const apiKey = ASAAS_API_KEY.value();
@@ -63,7 +63,7 @@ exports.createAsaasCharge = onCall(
       billingType,
       value: Number(amount) + BOLETO_FEE,
       dueDate,
-      description: "Aluguel",
+      description,
       externalReference: leaseId || tenantId,
     }, apiKey);
 
@@ -87,7 +87,7 @@ exports.createAsaasCharge = onCall(
       userId: uid, leaseId: leaseId || null, tenantId, propertyId, ownerId,
       amount: Number(amount), competencia: String(dueDate).slice(0, 7), dueDate,
       status: "PENDING", asaasPaymentId: charge.id, invoiceUrl: charge.invoiceUrl,
-      asaasFee: BOLETO_FEE, createdAt: new Date().toISOString(),
+      asaasFee: BOLETO_FEE, kind, description, createdAt: new Date().toISOString(),
     });
 
     return { id: charge.id, invoiceUrl: charge.invoiceUrl, bankSlipUrl: charge.bankSlipUrl || null };

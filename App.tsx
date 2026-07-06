@@ -88,7 +88,7 @@ const Wizard: React.FC<{ properties: any[]; tenants: any[]; owners: any[]; onClo
     propertyId: avail[0]?.id || '', tenantMode: 'new', tenantId: tenants[0]?.id || '',
     tName: '', tDoc: '', tPhone: '', creditResult: 'aprovado', creditScore: '', creditObs: '',
     start: today, end: nextYear, rent: '', dueDay: 5, index: 'IPCA', guarantee: 'Caução',
-    checks: [true, true, true, false, false, false], vobs: '',
+    checks: [true, true, true, false, false, false], vobs: '', caucao: false, caucaoValue: '',
   });
   const set = (k: string, v: any) => setW((s: any) => ({ ...s, [k]: v }));
   const oName = (id: string) => owners.find(o => o.id === id)?.name || '';
@@ -127,6 +127,11 @@ const Wizard: React.FC<{ properties: any[]; tenants: any[]; owners: any[]; onClo
           <div style={{ display: 'flex', gap: 12 }}><div className="field-g" style={{ flex: 1, marginTop: 0 }}><label className="lbl">Início</label><input className="inp" type="date" value={w.start} onChange={e => set('start', e.target.value)} /></div><div className="field-g" style={{ flex: 1, marginTop: 0 }}><label className="lbl">Término</label><input className="inp" type="date" value={w.end} onChange={e => set('end', e.target.value)} /></div></div>
           <div style={{ display: 'flex', gap: 12 }}><div className="field-g" style={{ flex: 1 }}><label className="lbl">Aluguel (R$)</label><input className="inp" type="number" value={w.rent} onChange={e => set('rent', e.target.value)} /></div><div className="field-g" style={{ width: 110 }}><label className="lbl">Dia venc.</label><input className="inp" type="number" value={w.dueDay} onChange={e => set('dueDay', e.target.value)} /></div></div>
           <div style={{ display: 'flex', gap: 12 }}><div className="field-g" style={{ flex: 1 }}><label className="lbl">Reajuste</label><select className="inp" value={w.index} onChange={e => set('index', e.target.value)}><option>IPCA</option><option>IGP-M</option></select></div><div className="field-g" style={{ flex: 1 }}><label className="lbl">Garantia</label><select className="inp" value={w.guarantee} onChange={e => set('guarantee', e.target.value)}><option>Caução</option><option>Fiador</option><option>Seguro-fiança</option></select></div></div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 16, cursor: 'pointer', fontWeight: 600, fontSize: 13.5 }}>
+            <input type="checkbox" checked={!!w.caucao} onChange={e => set('caucao', e.target.checked)} style={{ width: 18, height: 18 }} />
+            Cobrar caução (gera um boleto separado)
+          </label>
+          {w.caucao && <div className="field-g"><label className="lbl">Valor do caução (R$)</label><input className="inp" type="number" value={w.caucaoValue} onChange={e => set('caucaoValue', e.target.value)} placeholder="Ex: 800" /></div>}
         </>}
         {step === 4 && <>
           <p style={{ fontSize: 13, color: 'var(--gray)', marginBottom: 10 }}>Confira o estado de entrega do imóvel.</p>
@@ -146,6 +151,7 @@ const Wizard: React.FC<{ properties: any[]; tenants: any[]; owners: any[]; onClo
             <div className="revrow"><span className="k">Aluguel</span><span className="v">R$ {Number(w.rent || 0).toLocaleString('pt-BR')} · dia {w.dueDay}</span></div>
             <div className="revrow"><span className="k">Reajuste / Garantia</span><span className="v">{w.index} · {w.guarantee}</span></div>
             <div className="revrow"><span className="k">Vistoria</span><span className="v">{okc} de {CHKITEMS.length} itens</span></div>
+            {w.caucao && Number(w.caucaoValue) > 0 && <div className="revrow"><span className="k">Caução</span><span className="v">R$ {Number(w.caucaoValue).toLocaleString('pt-BR')} · boleto será gerado</span></div>}
             <div className="note" style={{ marginTop: 14 }}><i className="fas fa-circle-info" /><span>Ao efetivar: o imóvel passa a <b>Alugado</b> e o contrato é criado.</span></div>
           </>;
         })()}
@@ -245,21 +251,33 @@ const App: React.FC = () => {
         const t = await dbService.insert('tenants', { name: w.tName || 'Novo inquilino', document: w.tDoc || '', phone: w.tPhone || '' });
         tenantId = t.id;
       }
-      await dbService.insert('leases', {
+      const caucaoVal = w.caucao ? Number(w.caucaoValue) || 0 : 0;
+      const lease: any = await dbService.insert('leases', {
         propertyId: w.propertyId, tenantId, startDate: w.start, endDate: w.end,
-        monthlyRent: Number(w.rent) || 0, dueDay: Number(w.dueDay) || 5, active: true, deposit: 0,
+        monthlyRent: Number(w.rent) || 0, dueDay: Number(w.dueDay) || 5, active: true, deposit: caucaoVal,
         readjustIndex: w.index, guarantee: w.guarantee,
         creditResult: w.creditResult, creditScore: w.creditScore, creditNotes: w.creditObs,
         entryChecklist: JSON.stringify({ items: w.checks, notes: w.vobs }),
       });
       await dbService.update('properties', w.propertyId, { status: 'rented' });
-      setWizOpen(false); await loadAll(); notify('Locação efetivada · imóvel alugado ✓');
+      setWizOpen(false); await loadAll();
+      if (caucaoVal > 0) {
+        try {
+          const fn = httpsCallable(fns, 'createAsaasCharge');
+          const d = new Date(); d.setDate(d.getDate() + 5); const dueDate = d.toISOString().slice(0, 10);
+          const res: any = await fn({ tenantId, leaseId: lease.id, amount: caucaoVal, dueDate, billingType: 'BOLETO', kind: 'deposit', description: 'Caução' });
+          await loadAll(); notify('Locação efetivada · boleto de caução gerado ✓');
+          if (res?.data?.invoiceUrl) window.open(res.data.invoiceUrl, '_blank');
+        } catch (err: any) { console.error(err); notify('Locação criada, mas o boleto de caução falhou: ' + (err?.message || '')); }
+      } else {
+        notify('Locação efetivada · imóvel alugado ✓');
+      }
     } catch (err) { console.error(err); notify('Erro ao efetivar a locação'); }
   };
 
   const calcOwner = (o: any) => {
     const ps = props.filter(p => p.ownerId === o.id && p.status === 'rented');
-    const recebido = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED').reduce((s, p) => s + Number(p.amount || 0), 0);
+    const recebido = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0);
     const desp = expenses.filter(e => e.ownerId === o.id).reduce((s, e) => s + Number(e.amount || 0), 0);
     const rate = Number(o.commissionRate ?? 10);
     const mode = o.commissionMode || 'deducted';
@@ -401,7 +419,7 @@ const App: React.FC = () => {
   const chartMonths = Array.from({ length: 6 }, (_, i) => { const d = new Date(+COMP.split('-')[0], +COMP.split('-')[1] - 6 + i, 1); return d.toISOString().slice(0, 7); });
   const hist = chartMonths.map(m => ({
     m: MESNOME[+m.split('-')[1]].slice(0, 3),
-    receb: payments.filter(p => p.status === 'RECEIVED' && p.competencia === m).reduce((s, p) => s + Number(p.amount || 0), 0),
+    receb: payments.filter(p => p.status === 'RECEIVED' && p.competencia === m && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0),
     desp: expenses.filter(e => (e.date || '').slice(0, 7) === m).reduce((s, e) => s + Number(e.amount || 0), 0),
   }));
   const maxv = Math.max(1, ...hist.map(h => Math.max(h.receb, h.desp)));
@@ -543,6 +561,18 @@ const App: React.FC = () => {
                           <button className="btn-g" onClick={() => openLease(lease, true)}><i className="fas fa-rotate" /> Renovar</button>
                           <button className="btn-g" style={{ color: 'var(--amber)', borderColor: '#f0d9b0' }} onClick={() => setExitLease(lease)}><i className="fas fa-file-circle-xmark" /> Encerrar</button>
                         </div>
+                        {(() => {
+                          const caucs = payments.filter(pp => pp.leaseId === lease.id && (pp.kind || '') === 'deposit');
+                          if (!caucs.length) return null;
+                          return <div style={{ marginTop: 14, borderTop: '1px solid var(--line2)', paddingTop: 12 }}>
+                            <div className="lbl" style={{ marginBottom: 8 }}>Caução</div>
+                            {caucs.map((c: any) => <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 6 }}>
+                              <span className="if-mono" style={{ fontWeight: 700 }}>R$ {brl(c.amount)}</span>
+                              {c.status === 'RECEIVED' ? <span className="pill ok">Recebido</span> : <span className="pill idg">Aguardando</span>}
+                              {c.invoiceUrl && c.invoiceUrl !== '#' && <button className="act" title="Ver boleto" onClick={() => window.open(c.invoiceUrl, '_blank')}><i className="fas fa-eye" /></button>}
+                            </div>)}
+                          </div>;
+                        })()}
                       </> : <div style={{ padding: '14px 0', color: 'var(--gray)', fontSize: 13 }}>Nenhum contrato ativo. Use <b>Nova locação</b> na lista de imóveis para alugar.</div>}
                     </div>
                   </div>
@@ -655,7 +685,7 @@ const App: React.FC = () => {
 
           {screen === 'pagamentos' && (() => {
             const activeLeases = leases.filter(l => l.active);
-            const recebidoMes = payments.filter(p => p.competencia === COMP && p.status === 'RECEIVED').reduce((s, p) => s + Number(p.amount || 0), 0);
+            const recebidoMes = payments.filter(p => p.competencia === COMP && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0);
             const previstoMes = activeLeases.reduce((s, l) => s + Number(l.monthlyRent || 0), 0);
             return <>
               <div className="scrhead"><div className="ti">Pagamentos <small>· {COMP_LABEL}</small></div></div>
@@ -669,7 +699,7 @@ const App: React.FC = () => {
                 <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Aluguel</th><th className="hidesm">Boleto (c/ taxa)</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
                 <tbody>{activeLeases.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhuma locação ativa</td></tr> : activeLeases.map(l => {
                   const t = tenants.find(x => x.id === l.tenantId); const p = props.find(x => x.id === l.propertyId);
-                  const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP);
+                  const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit');
                   const received = pay?.status === 'RECEIVED';
                   return <tr key={l.id}>
                     <td className="t">{t?.name || '—'}</td><td>{p?.title || '—'}</td><td className="if-mono">R$ {brl(l.monthlyRent)}</td>
@@ -702,7 +732,7 @@ const App: React.FC = () => {
             </div>
             {(() => {
               const o = owners.find(x => x.id === (repOwner || owners[0]?.id)); if (!o) return <div className="glass emptyrow">Cadastre um proprietário primeiro</div>;
-              const c = calcOwner(o); const recPays = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED'); const exps = expenses.filter(e => e.ownerId === o.id); const totalFee = recPays.reduce((s, p) => s + Number(p.asaasFee || 0), 0);
+              const c = calcOwner(o); const recPays = payments.filter(p => p.ownerId === o.id && p.competencia === COMP && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit'); const exps = expenses.filter(e => e.ownerId === o.id); const totalFee = recPays.reduce((s, p) => s + Number(p.asaasFee || 0), 0);
               return <div className="glass" style={{ maxWidth: 720, overflow: 'hidden' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '24px 26px', background: 'var(--ink)', color: '#fff' }}>
                   <div><div style={{ fontWeight: 900, fontSize: 19 }}>Imobi<span style={{ color: '#a5b4fc' }}>Flow</span></div><div style={{ fontSize: 12, opacity: .85, marginTop: 6 }}>Extrato de Repasse</div></div>

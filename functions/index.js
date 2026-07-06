@@ -14,6 +14,7 @@ const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
 // Para produção, troque para "https://api.asaas.com/v3".
 const ASAAS_BASE = "https://api-sandbox.asaas.com/v3";
 const REGION = "southamerica-east1";
+const BOLETO_FEE = 2.0; // taxa do boleto Asaas, repassada ao inquilino
 
 async function asaas(path, method, body, apiKey) {
   const res = await fetch(ASAAS_BASE + path, {
@@ -33,7 +34,7 @@ exports.createAsaasCharge = onCall(
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Faça login para gerar cobranças.");
 
-    const { tenantId, leaseId, amount, dueDate, billingType = "BOLETO" } = request.data || {};
+    const { tenantId, leaseId, amount, dueDate, billingType = "BOLETO", kind = "rent", description = "Aluguel" } = request.data || {};
     if (!tenantId || !amount || !dueDate) throw new HttpsError("invalid-argument", "Dados incompletos.");
 
     const apiKey = ASAAS_API_KEY.value();
@@ -56,13 +57,13 @@ exports.createAsaasCharge = onCall(
       await db.collection("tenants").doc(tenantId).update({ asaasId: customerId });
     }
 
-    // Cobrança
+    // Cobrança — o inquilino paga o aluguel + a taxa do boleto
     const charge = await asaas("/payments", "POST", {
       customer: customerId,
       billingType,
-      value: Number(amount),
+      value: Number(amount) + BOLETO_FEE,
       dueDate,
-      description: "Aluguel",
+      description,
       externalReference: leaseId || tenantId,
     }, apiKey);
 
@@ -80,12 +81,13 @@ exports.createAsaasCharge = onCall(
       }
     }
 
-    // Registra o pagamento (com o id da cobrança, pro webhook achar depois)
+    // Registra o pagamento. amount = aluguel líquido (base do repasse);
+    // o boleto cobrado do inquilino foi amount + BOLETO_FEE.
     await db.collection("asaas_payments").add({
       userId: uid, leaseId: leaseId || null, tenantId, propertyId, ownerId,
       amount: Number(amount), competencia: String(dueDate).slice(0, 7), dueDate,
       status: "PENDING", asaasPaymentId: charge.id, invoiceUrl: charge.invoiceUrl,
-      asaasFee: 2.0, createdAt: new Date().toISOString(),
+      asaasFee: BOLETO_FEE, kind, description, createdAt: new Date().toISOString(),
     });
 
     return { id: charge.id, invoiceUrl: charge.invoiceUrl, bankSlipUrl: charge.bankSlipUrl || null };
