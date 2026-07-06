@@ -1,12 +1,12 @@
 // functions/index.js — Integração Asaas do ImobiFlow (Firebase Cloud Functions)
 const { onCall, onRequest, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
 const db = admin.firestore();
 
-// Segredos (definidos no deploy, nunca no código)
 const ASAAS_API_KEY = defineSecret("ASAAS_API_KEY");
 const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
 
@@ -27,70 +27,111 @@ async function asaas(path, method, body, apiKey) {
   return data;
 }
 
-// -------- Gera a cobrança (boleto/PIX) --------
+// Garante um cliente no Asaas para o inquilino (cria e guarda o asaasId)
+async function ensureCustomer(tenantId, tenant, apiKey) {
+  if (tenant.asaasId) return tenant.asaasId;
+  const customer = await asaas("/customers", "POST", {
+    name: tenant.name,
+    cpfCnpj: String(tenant.document || "").replace(/\D/g, "") || undefined,
+    mobilePhone: String(tenant.phone || "").replace(/\D/g, "") || undefined,
+    email: tenant.email || undefined,
+  }, apiKey);
+  await db.collection("tenants").doc(tenantId).update({ asaasId: customer.id });
+  return customer.id;
+}
+
+async function refsDaLocacao(lease) {
+  let propertyId = lease.propertyId || null, ownerId = null;
+  if (propertyId) {
+    const pSnap = await db.collection("properties").doc(propertyId).get();
+    ownerId = pSnap.data()?.ownerId || null;
+  }
+  return { propertyId, ownerId };
+}
+
+// Cria a cobrança no Asaas e registra o pagamento no banco
+async function criarCobranca(o) {
+  const customerId = await ensureCustomer(o.tenantId, o.tenant, o.apiKey);
+  const charge = await asaas("/payments", "POST", {
+    customer: customerId,
+    billingType: o.billingType || "BOLETO",
+    value: Number(o.amount) + BOLETO_FEE, // inquilino paga aluguel + taxa do boleto
+    dueDate: o.dueDate,
+    description: o.description || "Aluguel",
+    externalReference: o.leaseId || o.tenantId,
+  }, o.apiKey);
+  await db.collection("asaas_payments").add({
+    userId: o.userId || null, leaseId: o.leaseId || null, tenantId: o.tenantId,
+    propertyId: o.propertyId || null, ownerId: o.ownerId || null,
+    amount: Number(o.amount), competencia: String(o.dueDate).slice(0, 7), dueDate: o.dueDate,
+    status: "PENDING", asaasPaymentId: charge.id, invoiceUrl: charge.invoiceUrl,
+    asaasFee: BOLETO_FEE, kind: o.kind || "rent", description: o.description || "Aluguel",
+    createdAt: new Date().toISOString(),
+  });
+  return charge;
+}
+
+// -------- Gera a cobrança sob demanda (botão do app) --------
 exports.createAsaasCharge = onCall(
   { secrets: [ASAAS_API_KEY], region: REGION },
   async (request) => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError("unauthenticated", "Faça login para gerar cobranças.");
-
     const { tenantId, leaseId, amount, dueDate, billingType = "BOLETO", kind = "rent", description = "Aluguel" } = request.data || {};
     if (!tenantId || !amount || !dueDate) throw new HttpsError("invalid-argument", "Dados incompletos.");
 
     const apiKey = ASAAS_API_KEY.value();
-
-    // Inquilino (e confere que é do usuário)
     const tSnap = await db.collection("tenants").doc(tenantId).get();
     const tenant = tSnap.data();
     if (!tenant || tenant.userId !== uid) throw new HttpsError("not-found", "Inquilino não encontrado.");
 
-    // Cliente no Asaas (cria na 1ª vez e guarda o asaasId)
-    let customerId = tenant.asaasId;
-    if (!customerId) {
-      const customer = await asaas("/customers", "POST", {
-        name: tenant.name,
-        cpfCnpj: String(tenant.document || "").replace(/\D/g, "") || undefined,
-        mobilePhone: String(tenant.phone || "").replace(/\D/g, "") || undefined,
-        email: tenant.email || undefined,
-      }, apiKey);
-      customerId = customer.id;
-      await db.collection("tenants").doc(tenantId).update({ asaasId: customerId });
-    }
-
-    // Cobrança — o inquilino paga o aluguel + a taxa do boleto
-    const charge = await asaas("/payments", "POST", {
-      customer: customerId,
-      billingType,
-      value: Number(amount) + BOLETO_FEE,
-      dueDate,
-      description,
-      externalReference: leaseId || tenantId,
-    }, apiKey);
-
-    // Descobre imóvel/proprietário pela locação
     let propertyId = null, ownerId = null;
     if (leaseId) {
       const lSnap = await db.collection("leases").doc(leaseId).get();
       const lease = lSnap.data();
-      if (lease) {
-        propertyId = lease.propertyId || null;
-        if (propertyId) {
-          const pSnap = await db.collection("properties").doc(propertyId).get();
-          ownerId = pSnap.data()?.ownerId || null;
-        }
-      }
+      if (lease) ({ propertyId, ownerId } = await refsDaLocacao(lease));
     }
 
-    // Registra o pagamento. amount = aluguel líquido (base do repasse);
-    // o boleto cobrado do inquilino foi amount + BOLETO_FEE.
-    await db.collection("asaas_payments").add({
-      userId: uid, leaseId: leaseId || null, tenantId, propertyId, ownerId,
-      amount: Number(amount), competencia: String(dueDate).slice(0, 7), dueDate,
-      status: "PENDING", asaasPaymentId: charge.id, invoiceUrl: charge.invoiceUrl,
-      asaasFee: BOLETO_FEE, kind, description, createdAt: new Date().toISOString(),
-    });
-
+    const charge = await criarCobranca({ apiKey, userId: uid, tenantId, tenant, leaseId, propertyId, ownerId, amount, dueDate, kind, description, billingType });
     return { id: charge.id, invoiceUrl: charge.invoiceUrl, bankSlipUrl: charge.bankSlipUrl || null };
+  }
+);
+
+// -------- Gera as cobranças do mês automaticamente (todo dia 1º, 09h) --------
+exports.gerarCobrancasMensais = onSchedule(
+  { schedule: "0 9 1 * *", timeZone: "America/Sao_Paulo", secrets: [ASAAS_API_KEY], region: REGION },
+  async () => {
+    const apiKey = ASAAS_API_KEY.value();
+    const comp = new Date().toISOString().slice(0, 7); // mês atual YYYY-MM
+    const leasesSnap = await db.collection("leases").where("active", "==", true).get();
+    for (const lDoc of leasesSnap.docs) {
+      const lease = lDoc.data();
+      const leaseId = lDoc.id;
+      try {
+        // pula se já existe cobrança de aluguel neste mês para esta locação
+        const existing = await db.collection("asaas_payments").where("leaseId", "==", leaseId).get();
+        const jaTem = existing.docs.some((d) => {
+          const x = d.data();
+          return x.competencia === comp && (x.kind || "rent") !== "deposit";
+        });
+        if (jaTem) continue;
+
+        const tSnap = await db.collection("tenants").doc(lease.tenantId).get();
+        const tenant = tSnap.data();
+        if (!tenant) continue;
+
+        const { propertyId, ownerId } = await refsDaLocacao(lease);
+        const dueDate = `${comp}-${String(lease.dueDay || 5).padStart(2, "0")}`;
+        await criarCobranca({
+          apiKey, userId: lease.userId, tenantId: lease.tenantId, tenant,
+          leaseId, propertyId, ownerId, amount: Number(lease.monthlyRent) || 0,
+          dueDate, kind: "rent", description: "Aluguel", billingType: "BOLETO",
+        });
+        console.log("Cobrança mensal gerada para locação", leaseId, comp);
+      } catch (err) {
+        console.error("Falha ao gerar cobrança da locação", leaseId, err);
+      }
+    }
   }
 );
 
@@ -101,7 +142,7 @@ exports.asaasWebhook = onRequest(
     if (req.method !== "POST") return res.status(405).send("Method not allowed");
 
     const token = req.get("asaas-access-token");
-    if (!token || token !== ASAAS_WEBHOOK_TOKEN.value()) return res.status(401).send("Unauthorized");
+    if (!token || token.trim() !== ASAAS_WEBHOOK_TOKEN.value().trim()) return res.status(401).send("Unauthorized");
 
     const event = req.body?.event;
     const payment = req.body?.payment;
@@ -117,10 +158,7 @@ exports.asaasWebhook = onRequest(
     try {
       const snap = await db.collection("asaas_payments").where("asaasPaymentId", "==", payment.id).limit(1).get();
       if (!snap.empty) {
-        await snap.docs[0].ref.update({
-          status,
-          ...(status === "RECEIVED" ? { receivedAt: new Date().toISOString() } : {}),
-        });
+        await snap.docs[0].ref.update({ status, ...(status === "RECEIVED" ? { receivedAt: new Date().toISOString() } : {}) });
       }
     } catch (err) {
       console.error("Erro ao atualizar pagamento:", err);

@@ -694,7 +694,7 @@ const App: React.FC = () => {
                 <div className="kpi glass"><div className="lbl">A receber</div><div className="v if-mono" style={{ color: 'var(--amber)' }}>{brl(previstoMes - recebidoMes)}</div></div>
                 <div className="kpi glass"><div className="lbl">Previsto</div><div className="v if-mono">{brl(previstoMes)}</div></div>
               </div>
-              <div className="note"><i className="fas fa-circle-info" /><span><b>Gerar boleto</b> cria a cobrança no Asaas; quando o inquilino paga, vira <b>Recebido</b> sozinho. Você também pode marcar manualmente. O boleto inclui a taxa Asaas de R$ 2,00.</span></div>
+              <div className="note"><i className="fas fa-circle-info" /><span>As cobranças do mês são <b>geradas automaticamente todo dia 1º</b>. Você também pode adiantar com <b>Gerar boleto</b>. Quando o inquilino paga, vira <b>Recebido</b> sozinho. O boleto inclui a taxa Asaas de R$ 2,00.</span></div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Aluguel</th><th className="hidesm">Boleto (c/ taxa)</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
                 <tbody>{activeLeases.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhuma locação ativa</td></tr> : activeLeases.map(l => {
