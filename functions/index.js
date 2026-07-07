@@ -12,7 +12,7 @@ const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
 
 // Ambiente do Asaas. Sandbox (teste) por padrão.
 // Para produção, troque para "https://api.asaas.com/v3".
-const ASAAS_BASE = "https://api-sandbox.asaas.com/v3";
+const ASAAS_BASE = "https://api.asaas.com/v3";
 const REGION = "southamerica-east1";
 const BOLETO_FEE = 2.0; // taxa do boleto Asaas, repassada ao inquilino
 
