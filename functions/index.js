@@ -12,7 +12,7 @@ const ASAAS_WEBHOOK_TOKEN = defineSecret("ASAAS_WEBHOOK_TOKEN");
 
 // Ambiente do Asaas. Sandbox (teste) por padrão.
 // Para produção, troque para "https://api.asaas.com/v3".
-const ASAAS_BASE = "https://api.asaas.com/v3";
+const ASAAS_BASE = "https://api-sandbox.asaas.com/v3";
 const REGION = "southamerica-east1";
 const BOLETO_FEE = 2.0; // taxa do boleto Asaas, repassada ao inquilino
 
@@ -27,12 +27,30 @@ async function asaas(path, method, body, apiKey) {
   return data;
 }
 
-// Garante um cliente no Asaas para o inquilino (cria e guarda o asaasId)
+// Garante um cliente no Asaas para o inquilino.
+// Reaproveita um cliente já existente (pelo CPF/CNPJ) e só cria um novo se não achar.
 async function ensureCustomer(tenantId, tenant, apiKey) {
   if (tenant.asaasId) return tenant.asaasId;
+  const doc = String(tenant.document || "").replace(/\D/g, "");
+
+  // 1) tenta reaproveitar um cliente já cadastrado no Asaas (pelo documento)
+  if (doc) {
+    try {
+      const found = await asaas(`/customers?cpfCnpj=${doc}`, "GET", null, apiKey);
+      if (found && Array.isArray(found.data) && found.data.length > 0) {
+        const existingId = found.data[0].id;
+        await db.collection("tenants").doc(tenantId).update({ asaasId: existingId });
+        return existingId;
+      }
+    } catch (e) {
+      console.error("Busca de cliente no Asaas falhou, criando novo:", e);
+    }
+  }
+
+  // 2) não achou -> cria um novo
   const customer = await asaas("/customers", "POST", {
     name: tenant.name,
-    cpfCnpj: String(tenant.document || "").replace(/\D/g, "") || undefined,
+    cpfCnpj: doc || undefined,
     mobilePhone: String(tenant.phone || "").replace(/\D/g, "") || undefined,
     email: tenant.email || undefined,
   }, apiKey);
@@ -94,6 +112,25 @@ exports.createAsaasCharge = onCall(
 
     const charge = await criarCobranca({ apiKey, userId: uid, tenantId, tenant, leaseId, propertyId, ownerId, amount, dueDate, kind, description, billingType });
     return { id: charge.id, invoiceUrl: charge.invoiceUrl, bankSlipUrl: charge.bankSlipUrl || null };
+  }
+);
+
+// -------- Cancela/exclui uma cobrança no Asaas --------
+exports.cancelAsaasCharge = onCall(
+  { secrets: [ASAAS_API_KEY], region: REGION },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) throw new HttpsError("unauthenticated", "Faça login.");
+    const { asaasPaymentId } = request.data || {};
+    if (!asaasPaymentId) return { ok: false, skipped: true };
+    const apiKey = ASAAS_API_KEY.value();
+    try {
+      await asaas(`/payments/${asaasPaymentId}`, "DELETE", null, apiKey);
+      return { ok: true };
+    } catch (e) {
+      // pode falhar se já estiver paga/removida — o app ignora e apaga só o registro local
+      return { ok: false, error: String((e && e.message) || e) };
+    }
   }
 );
 

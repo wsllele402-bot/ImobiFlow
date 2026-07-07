@@ -356,6 +356,16 @@ const App: React.FC = () => {
     try { if (pay.asaasPaymentId) await dbService.update('payments', pay.id, { status: 'PENDING' }); else await dbService.delete('payments', pay.id); await loadAll(); notify('Desfeito'); }
     catch { notify('Erro ao desfazer'); }
   };
+  const excluirPagamento = async (pay: any) => {
+    if (!window.confirm('Excluir este recebimento/cobrança? Se houver boleto no Asaas, ele será cancelado. Esta ação não pode ser desfeita.')) return;
+    try {
+      if (pay.asaasPaymentId) {
+        try { const fn = httpsCallable(fns, 'cancelAsaasCharge'); await fn({ asaasPaymentId: pay.asaasPaymentId }); } catch (e) { console.error('cancelamento Asaas falhou (ignorado):', e); }
+      }
+      await dbService.delete('payments', pay.id);
+      await loadAll(); notify('Excluído');
+    } catch (err) { console.error(err); notify('Erro ao excluir'); }
+  };
   const encerrarContrato = async (lease: any, payload: any) => {
     try {
       await dbService.update('leases', lease.id, { active: false, endedAt: payload.endDate, exitChecklist: JSON.stringify({ items: payload.checks, notes: payload.obs }) });
@@ -585,6 +595,7 @@ const App: React.FC = () => {
                               <span className="if-mono" style={{ fontWeight: 700 }}>R$ {brl(c.amount)}</span>
                               {c.status === 'RECEIVED' ? <span className="pill ok">Recebido</span> : <span className="pill idg">Aguardando</span>}
                               {c.invoiceUrl && c.invoiceUrl !== '#' && <button className="act" title="Ver boleto" onClick={() => window.open(c.invoiceUrl, '_blank')}><i className="fas fa-eye" /></button>}
+                              <button className="act danger" title="Excluir" onClick={() => excluirPagamento(c)}><i className="fas fa-trash" /></button>
                             </div>)}
                           </div>;
                         })()}
@@ -732,6 +743,7 @@ const App: React.FC = () => {
                               <button className="btn-i" onClick={() => gerarCobranca(l)}>Gerar boleto</button>
                               <button className="btn-g" onClick={() => markPayment(l, null)}>Marcar recebido</button>
                             </>}
+                        {pay && <button className="act danger" title="Excluir" onClick={() => excluirPagamento(pay)}><i className="fas fa-trash" /></button>}
                       </div>
                     </td>
                   </tr>;
