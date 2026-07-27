@@ -1,0 +1,474 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --tooltip-bg: #ffffff;
+    --tooltip-border: #e5e7eb;
+  }
+  .dark {
+    --tooltip-bg: #0A0A0B;
+    --tooltip-border: rgba(255,255,255,0.1);
+  }
+  body {
+    @apply bg-white text-gray-900 dark:bg-[#050505] dark:text-white antialiased transition-colors duration-300;
+    font-family: var(--font-sans);
+  }
+}
+
+.glass-card {
+  @apply bg-white dark:bg-white/[0.02] border border-gray-200 dark:border-white/5 backdrop-blur-2xl shadow-md dark:shadow-none;
+}
+
+.glass-input {
+  @apply bg-gray-50 dark:bg-white/[0.03] border border-gray-300 dark:border-white/10 focus:border-indigo-500/50 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all dark:text-white text-gray-900 placeholder:text-gray-400 dark:placeholder:text-gray-600;
+}
+
+.premium-glow {
+  @apply shadow-[0_0_40px_-10px_rgba(79,70,229,0.1)] dark:shadow-[0_0_40px_-10px_rgba(79,70,229,0.2)];
+}
+
+.premium-glow-hover:hover {
+  @apply shadow-[0_0_50px_-5px_rgba(79,70,229,0.2)] dark:shadow-[0_0_50px_-5px_rgba(79,70,229,0.3)];
+}
+
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-br from-gray-900 via-gray-800 to-gray-600 dark:from-white dark:via-white dark:to-white/40;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-white/10 rounded-full;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400 dark:bg-white/20;
+}
+
+  /* Professional Minimalist Print Styles */
+@media print {
+  @page {
+    margin: 10mm;
+    size: A4 portrait;
+  }
+
+  /* Force background colors and images */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Hide non-printed elements */
+  .no-print, aside, header, nav, footer, .sidebar-container, .no-print-flex, .fixed, .absolute {
+    display: none !important;
+  }
+
+  /* Ensure the print container and its parents are visible and allow flow */
+  html, body, #root, main, .min-h-screen, .flex-1, .flex-col, .max-w-7xl, .print-container {
+    display: block !important;
+    visibility: visible !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: black !important;
+    position: static !important;
+  }
+
+  .print-container {
+    border-radius: 0 !important;
+  }
+
+  .print-container > div {
+    padding: 5mm !important;
+  }
+
+  body { 
+    background: white !important; 
+    color: #000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    font-family: "Inter", "Helvetica", "Arial", sans-serif !important;
+    font-size: 10pt !important;
+    line-height: 1.4 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  /* Force light mode colors for print */
+  .dark .print-container,
+  .dark .print-container * {
+    color: black !important;
+    border-color: #eee !important;
+  }
+
+  .dark .print-container .text-white,
+  .dark .print-container .dark\:text-white {
+    color: black !important;
+  }
+
+  .dark .print-container .bg-white,
+  .dark .print-container .dark\:bg-white\/\[0\.02\] {
+    background-color: white !important;
+  }
+
+  .dark .print-container .text-indigo-900,
+  .dark .print-container .dark\:text-indigo-900 {
+    color: #1e1b4b !important;
+  }
+
+  .dark .print-container .fill-white\/10,
+  .dark .print-container .dark\:fill-white\/10 {
+    fill: #f3f4f6 !important;
+  }
+
+  /* Hide specific UI elements that might still take space */
+  aside, header, nav, .no-print, .sidebar-container, .fixed, .absolute, .no-print-flex { 
+    display: none !important; 
+    height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  html, body, #root, main { 
+    padding: 0 !important; 
+    margin: 0 !important; 
+    width: 100% !important; 
+    display: block !important; 
+    overflow: visible !important;
+    height: auto !important;
+    background: white !important;
+  }
+
+  /* Document Header */
+  .report-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    border-bottom: 2px solid #000 !important;
+    padding-bottom: 1rem !important;
+    margin-bottom: 2rem !important;
+    visibility: visible !important;
+  }
+
+  .report-title-section h1 {
+    font-size: 20pt !important;
+    font-weight: 900 !important;
+    text-transform: uppercase !important;
+    letter-spacing: -0.04em !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+    color: #000 !important;
+  }
+
+  .report-meta {
+    font-size: 8pt !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+    color: #666 !important;
+    margin-top: 0.4rem !important;
+  }
+
+  .company-info {
+    text-align: right !important;
+    font-size: 8pt !important;
+    line-height: 1.2 !important;
+    color: #333 !important;
+  }
+
+  /* Section Titles */
+  .section-title {
+    font-size: 10pt !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    border-bottom: 1px solid #000 !important;
+    padding-bottom: 0.4rem !important;
+    margin-bottom: 1rem !important;
+    margin-top: 1.5rem !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    color: #000 !important;
+  }
+
+  /* Tables in Print */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-bottom: 1rem !important;
+  }
+
+  th {
+    background-color: #f3f4f6 !important;
+    color: #374151 !important;
+    font-weight: 800 !important;
+    text-align: left !important;
+    padding: 8pt !important;
+    font-size: 8pt !important;
+    border-bottom: 1px solid #e5e7eb !important;
+  }
+
+  td {
+    padding: 8pt !important;
+    font-size: 9pt !important;
+    border-bottom: 1px solid #f3f4f6 !important;
+    color: #000 !important;
+  }
+
+  /* Force columns for the breakdown in print, but allow breaking */
+  .grid-cols-1.lg\:grid-cols-2, .grid-cols-1.md\:grid-cols-2, .lg\:grid-cols-6 {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    gap: 1rem !important;
+    page-break-inside: auto !important;
+  }
+
+  .grid-cols-1.lg\:grid-cols-2 > div, .grid-cols-1.md\:grid-cols-2 > div, .lg\:grid-cols-6 > div {
+    flex: 1 !important;
+    min-width: 150px !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* If the report is very long, we might want to stack them instead to avoid column height issues */
+  /* But for now let's try flex-row which is often more stable than grid in print */
+
+  .bg-gray-50, .bg-emerald-50\/30, .bg-red-50\/30 {
+    background-color: #f9fafb !important;
+  }
+  
+  .bg-emerald-50\/30 {
+    background-color: #ecfdf5 !important;
+  }
+
+  .bg-red-50\/30 {
+    background-color: #fef2f2 !important;
+  }
+
+  /* Summary Cards */
+  .summary-card {
+    border: 1px solid #eee !important;
+    box-shadow: none !important;
+  }
+
+  .bg-emerald-500 {
+    background-color: #ecfdf5 !important;
+    border: 1px solid #10b981 !important;
+  }
+
+  .bg-red-500 {
+    background-color: #fef2f2 !important;
+    border: 1px solid #ef4444 !important;
+  }
+
+  .net-amount-card {
+    background-color: #f8fafc !important;
+    border: 2px solid #000 !important;
+  }
+
+  .summary-card label {
+    font-weight: 800 !important;
+    color: #666 !important;
+  }
+
+  .summary-card .value {
+    color: #000 !important;
+    font-weight: 900 !important;
+  }
+  
+  .bg-emerald-500 .value, .bg-emerald-500 label { color: #065f46 !important; }
+  .bg-red-500 .value, .bg-red-500 label { color: #991b1b !important; }
+
+  /* List Items Numbering */
+  .item-number {
+    font-family: var(--font-mono) !important;
+    font-size: 8pt !important;
+    color: #999 !important;
+    margin-right: 0.5rem !important;
+    font-weight: 400 !important;
+  }
+
+  /* Footer */
+  .report-footer {
+    margin-top: 4rem !important;
+    border-top: 1px solid #eee !important;
+    padding-top: 1rem !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-end !important;
+    page-break-inside: avoid !important;
+  }
+
+  .signature-block {
+    text-align: center !important;
+    width: 200px !important;
+  }
+
+  .signature-line {
+    border-top: 1px solid #000 !important;
+    margin-bottom: 0.4rem !important;
+  }
+
+  .signature-label {
+    font-size: 7pt !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    color: #666 !important;
+  }
+
+  .timestamp {
+    font-size: 7pt !important;
+    color: #999 !important;
+    text-align: right !important;
+  }
+
+  .no-break {
+    page-break-inside: avoid !important;
+  }
+}
+
+/* PDF Capture Mode - Forces light mode styles for html2canvas */
+.pdf-capture-mode {
+  background-color: white !important;
+  color: black !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
+  min-height: auto !important;
+}
+
+.pdf-capture-mode .print-container {
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+.pdf-capture-mode * {
+  color: black !important;
+  border-color: #eee !important;
+}
+
+.pdf-capture-mode .bg-white, 
+.pdf-capture-mode .bg-gray-50,
+.pdf-capture-mode .bg-emerald-50\/30,
+.pdf-capture-mode .bg-red-50\/30,
+.pdf-capture-mode .bg-indigo-50\/50,
+.pdf-capture-mode .bg-amber-50\/50,
+.pdf-capture-mode .bg-red-50\/50 {
+  background-color: #f9fafb !important;
+}
+
+.pdf-capture-mode .bg-emerald-500 {
+  background-color: #ecfdf5 !important;
+  border: 1px solid #10b981 !important;
+}
+
+.pdf-capture-mode .bg-red-500 {
+  background-color: #fef2f2 !important;
+  border: 1px solid #ef4444 !important;
+}
+
+.pdf-capture-mode .net-amount-card {
+  background-color: #f8fafc !important;
+  border: 2px solid #000 !important;
+}
+
+.pdf-capture-mode .text-emerald-600 { color: #059669 !important; }
+.pdf-capture-mode .text-red-600 { color: #dc2626 !important; }
+.pdf-capture-mode .text-indigo-600 { color: #4f46e5 !important; }
+.pdf-capture-mode .text-amber-600 { color: #d97706 !important; }
+
+.pdf-capture-mode .summary-card .value {
+  color: #000 !important;
+}
+
+.pdf-capture-mode .bg-emerald-500 .value, 
+.pdf-capture-mode .bg-emerald-500 label { 
+  color: #065f46 !important; 
+}
+
+.pdf-capture-mode .bg-red-500 .value, 
+.pdf-capture-mode .bg-red-500 label { 
+  color: #991b1b !important; 
+}
+
+.pdf-capture-mode table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+}
+
+.pdf-capture-mode th {
+  background-color: #f3f4f6 !important;
+  color: #374151 !important;
+  font-weight: 800 !important;
+  padding: 8pt !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  text-align: left !important;
+}
+
+.pdf-capture-mode td {
+  padding: 8pt !important;
+  border-bottom: 1px solid #f3f4f6 !important;
+  color: #000 !important;
+}
+
+.pdf-capture-mode .report-header {
+  border-bottom: 2px solid #000 !important;
+}
+
+.pdf-capture-mode .section-title {
+  border-bottom: 1px solid #eee !important;
+  color: #000 !important;
+}
+
+.pdf-capture-mode .grid-cols-1.lg\:grid-cols-2 {
+  display: block !important;
+  width: 100% !important;
+}
+
+.pdf-capture-mode .grid-cols-1.lg\:grid-cols-2 > div {
+  width: 100% !important;
+  margin-bottom: 2rem !important;
+}
+
+.pdf-capture-mode .no-print {
+  display: none !important;
+}
+
+.pdf-capture-mode svg {
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+.pdf-capture-mode .animate-pulse {
+  animation: none !important;
+}
+
+/* Utilities */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
