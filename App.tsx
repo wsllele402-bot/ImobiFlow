@@ -208,6 +208,10 @@ const App: React.FC = () => {
   const [fImo, setFImo] = useState({ q: '', type: '', status: '', owner: '' });
   const [fInq, setFInq] = useState('');
   const [fDesp, setFDesp] = useState({ q: '', cat: '', owner: '' });
+  const [sortImo, setSortImo] = useState('title');
+  const [sortOwn, setSortOwn] = useState('name');
+  const [sortInq, setSortInq] = useState('name');
+  const [sortDesp, setSortDesp] = useState('date-desc');
   const [repOwner, setRepOwner] = useState('');
   const [selMonth, setSelMonth] = useState(COMP);
   const [closings, setClosings] = useState<any[]>([]);
@@ -624,7 +628,14 @@ const App: React.FC = () => {
                 </div>
               </>;
             }
-            const list = props.filter(p => (!fImo.q || (p.title + ' ' + p.address).toLowerCase().includes(fImo.q.toLowerCase())) && (!fImo.type || p.type === fImo.type) && (!fImo.status || p.status === fImo.status) && (!fImo.owner || p.ownerId === fImo.owner));
+            const list0 = props.filter(p => (!fImo.q || (p.title + ' ' + p.address).toLowerCase().includes(fImo.q.toLowerCase())) && (!fImo.type || p.type === fImo.type) && (!fImo.status || p.status === fImo.status) && (!fImo.owner || p.ownerId === fImo.owner));
+            const list = [...list0].sort((a, b) => {
+              if (sortImo === 'price-desc') return Number(b.price || 0) - Number(a.price || 0);
+              if (sortImo === 'price-asc') return Number(a.price || 0) - Number(b.price || 0);
+              if (sortImo === 'owner') return oName(a.ownerId).localeCompare(oName(b.ownerId));
+              if (sortImo === 'status') return String(a.status).localeCompare(String(b.status));
+              return String(a.title || '').localeCompare(String(b.title || ''));
+            });
             return <>
               <div className="scrhead"><div className="ti">Imóveis <small>· {list.length} de {props.length}</small></div><div style={{ display: 'flex', gap: 8 }}><button className="btn-i" onClick={() => setWizOpen(true)}><i className="fas fa-file-signature" /> Nova locação</button><button className="btn-g" onClick={() => openImovel()}><i className="fas fa-plus" /> Novo imóvel</button></div></div>
               <div className="filters">
@@ -632,6 +643,7 @@ const App: React.FC = () => {
                 <select value={fImo.type} onChange={e => setFImo({ ...fImo, type: e.target.value })}><option value="">Todos os tipos</option>{TIPOS.map(t => <option key={t}>{t}</option>)}</select>
                 <select value={fImo.status} onChange={e => setFImo({ ...fImo, status: e.target.value })}><option value="">Todas as situações</option><option value="rented">Alugado</option><option value="available">Disponível</option><option value="maintenance">Manutenção</option></select>
                 <select value={fImo.owner} onChange={e => setFImo({ ...fImo, owner: e.target.value })}><option value="">Todos os proprietários</option>{owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
+                <select value={sortImo} onChange={e => setSortImo(e.target.value)}><option value="title">Ordenar: Título (A-Z)</option><option value="price-desc">Aluguel (maior)</option><option value="price-asc">Aluguel (menor)</option><option value="owner">Proprietário</option><option value="status">Situação</option></select>
               </div>
               {list.length === 0 ? <div className="glass emptyrow">Nenhum imóvel encontrado</div> :
                 <div className="pgrid">{list.map(p => {
@@ -650,7 +662,9 @@ const App: React.FC = () => {
           {screen === 'proprietarios' && <>
             <div className="scrhead"><div className="ti">Proprietários <small>· fechamento do mês</small></div><button className="btn-g" onClick={() => openOwner()}><i className="fas fa-plus" /> Novo proprietário</button></div>
             <div className="note"><i className="fas fa-circle-info" /><span>Cada proprietário tem sua regra de comissão. No modo <b>abatida</b> a comissão sai antes do repasse; no modo <b>faturada</b> repassa o valor cheio e você cobra depois.</span></div>
-            {owners.length === 0 ? <div className="glass emptyrow">Nenhum proprietário cadastrado</div> : owners.map(o => {
+            {owners.length === 0 ? <div className="glass emptyrow">Nenhum proprietário cadastrado</div> : <>
+              <div className="filters"><select value={sortOwn} onChange={e => setSortOwn(e.target.value)}><option value="name">Ordenar: Nome (A-Z)</option><option value="repasse">Maior repasse</option><option value="recebido">Maior recebido</option></select></div>
+              {[...owners].sort((a, b) => { if (sortOwn === 'repasse') return calcOwner(b, COMP).liquido - calcOwner(a, COMP).liquido; if (sortOwn === 'recebido') return calcOwner(b, COMP).recebido - calcOwner(a, COMP).recebido; return String(a.name || '').localeCompare(String(b.name || '')); }).map(o => {
               const c = calcOwner(o, COMP);
               return <div key={o.id} className="glass repcard">
                 <div className="reph"><span className="av">{initials(o.name)}</span><div className="g"><div className="nm">{o.name}</div><div className="md">{c.names}</div></div>
@@ -665,14 +679,19 @@ const App: React.FC = () => {
                 </div>
                 <div className="repfoot"><span className="lbl">{c.mode === 'invoiced' && c.taxa > 0 ? `Repassa cheio · cobra ${brl(c.taxa)} depois` : 'Repasse do mês'}</span><div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><span className="net if-mono">R$ {brl(c.liquido)}</span><button className="btn-i" onClick={() => notify('Repasse registrado ✓')}>Repassar</button></div></div>
               </div>;
-            })}
+            })}</>}
           </>}
 
           {screen === 'inquilinos' && (() => {
-            const list = tenants.filter(t => !fInq || (t.name || '').toLowerCase().includes(fInq.toLowerCase()));
+            const list0 = tenants.filter(t => !fInq || (t.name || '').toLowerCase().includes(fInq.toLowerCase()));
+            const list = [...list0].sort((a, b) => {
+              if (sortInq === 'name-desc') return String(b.name || '').localeCompare(String(a.name || ''));
+              if (sortInq === 'contract') { const la = leases.find(l => l.tenantId === a.id && l.active); const lb = leases.find(l => l.tenantId === b.id && l.active); return String(la?.endDate || '9999').localeCompare(String(lb?.endDate || '9999')); }
+              return String(a.name || '').localeCompare(String(b.name || ''));
+            });
             return <>
               <div className="scrhead"><div className="ti">Inquilinos <small>· {tenants.length}</small></div><button className="btn-g" onClick={() => openTenant()}><i className="fas fa-plus" /> Novo inquilino</button></div>
-              <div className="filters"><div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar inquilino..." value={fInq} onChange={e => setFInq(e.target.value)} /></div></div>
+              <div className="filters"><div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar inquilino..." value={fInq} onChange={e => setFInq(e.target.value)} /></div><select value={sortInq} onChange={e => setSortInq(e.target.value)}><option value="name">Ordenar: Nome (A-Z)</option><option value="name-desc">Nome (Z-A)</option><option value="contract">Contrato (vence antes)</option></select></div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Inquilino</th><th>Imóvel</th><th className="hidesm">Contrato até</th><th className="hidesm">Telefone</th><th style={{ textAlign: 'right' }}>Ações</th></tr></thead>
                 <tbody>{list.length === 0 ? <tr><td colSpan={5} className="emptyrow">Nenhum inquilino</td></tr> : list.map(t => {
@@ -691,7 +710,13 @@ const App: React.FC = () => {
           })()}
 
           {screen === 'despesas' && (() => {
-            const list = expenses.filter(e => (!fDesp.q || (e.description || '').toLowerCase().includes(fDesp.q.toLowerCase())) && (!fDesp.cat || e.category === fDesp.cat) && (!fDesp.owner || e.ownerId === fDesp.owner));
+            const list0 = expenses.filter(e => (!fDesp.q || (e.description || '').toLowerCase().includes(fDesp.q.toLowerCase())) && (!fDesp.cat || e.category === fDesp.cat) && (!fDesp.owner || e.ownerId === fDesp.owner));
+            const list = [...list0].sort((a, b) => {
+              if (sortDesp === 'date-asc') return String(a.date || '').localeCompare(String(b.date || ''));
+              if (sortDesp === 'amount-desc') return Number(b.amount || 0) - Number(a.amount || 0);
+              if (sortDesp === 'owner') return oName(a.ownerId).localeCompare(oName(b.ownerId));
+              return String(b.date || '').localeCompare(String(a.date || ''));
+            });
             const tot = list.reduce((s, e) => s + Number(e.amount || 0), 0);
             return <>
               <div className="scrhead"><div className="ti">Despesas <small>· total R$ {brl(tot)}</small></div><button className="btn-g" onClick={() => openDespesa()}><i className="fas fa-plus" /> Nova despesa</button></div>
@@ -700,6 +725,7 @@ const App: React.FC = () => {
                 <div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar descrição..." value={fDesp.q} onChange={e => setFDesp({ ...fDesp, q: e.target.value })} /></div>
                 <select value={fDesp.cat} onChange={e => setFDesp({ ...fDesp, cat: e.target.value })}><option value="">Todas as categorias</option>{CATS.map(c => <option key={c}>{c}</option>)}</select>
                 <select value={fDesp.owner} onChange={e => setFDesp({ ...fDesp, owner: e.target.value })}><option value="">Todos os proprietários</option>{owners.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select>
+                <select value={sortDesp} onChange={e => setSortDesp(e.target.value)}><option value="date-desc">Ordenar: Data (recente)</option><option value="date-asc">Data (antiga)</option><option value="amount-desc">Maior valor</option><option value="owner">Proprietário</option></select>
               </div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Data</th><th>Proprietário</th><th className="hidesm">Categoria</th><th>Descrição</th><th>Valor</th><th style={{ textAlign: 'right' }}>Ações</th></tr></thead>
@@ -714,6 +740,7 @@ const App: React.FC = () => {
 
           {screen === 'pagamentos' && (() => {
             const activeLeases = leases.filter(l => l.active);
+            const pendentes = activeLeases.filter(l => { const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit'); return !(pay && pay.status === 'RECEIVED'); });
             const recebidoMes = payments.filter(p => p.competencia === COMP && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0);
             const previstoMes = activeLeases.reduce((s, l) => s + Number(l.monthlyRent || 0), 0);
             return <>
@@ -723,10 +750,10 @@ const App: React.FC = () => {
                 <div className="kpi glass"><div className="lbl">A receber</div><div className="v if-mono" style={{ color: 'var(--amber)' }}>{brl(previstoMes - recebidoMes)}</div></div>
                 <div className="kpi glass"><div className="lbl">Previsto</div><div className="v if-mono">{brl(previstoMes)}</div></div>
               </div>
-              <div className="note"><i className="fas fa-circle-info" /><span>As cobranças do mês são <b>geradas automaticamente todo dia 1º</b>. Você também pode adiantar com <b>Gerar boleto</b>. Quando o inquilino paga, vira <b>Recebido</b> sozinho. O boleto inclui a taxa Asaas de R$ 2,00.</span></div>
+              <div className="note"><i className="fas fa-circle-info" /><span>Aqui ficam só as cobranças <b>pendentes</b> do mês — quando o inquilino paga, ela some daqui e aparece em <b>Todos os lançamentos</b> (mais abaixo). As cobranças são geradas automaticamente todo dia 1º. O boleto inclui a taxa Asaas de R$ 2,00.</span></div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Aluguel</th><th className="hidesm">Boleto (c/ taxa)</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
-                <tbody>{activeLeases.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhuma locação ativa</td></tr> : activeLeases.map(l => {
+                <tbody>{pendentes.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhuma cobrança pendente neste mês 🎉</td></tr> : pendentes.map(l => {
                   const t = tenants.find(x => x.id === l.tenantId); const p = props.find(x => x.id === l.propertyId);
                   const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit');
                   const received = pay?.status === 'RECEIVED';
