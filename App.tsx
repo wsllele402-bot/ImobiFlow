@@ -212,6 +212,8 @@ const App: React.FC = () => {
   const [sortOwn, setSortOwn] = useState('name');
   const [sortInq, setSortInq] = useState('name');
   const [sortDesp, setSortDesp] = useState('date-desc');
+  const [fPag, setFPag] = useState('');
+  const [sortPag, setSortPag] = useState('comp');
   const [repOwner, setRepOwner] = useState('');
   const [selMonth, setSelMonth] = useState(COMP);
   const [closings, setClosings] = useState<any[]>([]);
@@ -780,9 +782,21 @@ const App: React.FC = () => {
                 })}</tbody>
               </table></div></div>
               <div className="scrhead" style={{ marginTop: 26 }}><div className="ti">Todos os lançamentos <small>· {payments.length}</small></div></div>
+              <div className="filters">
+                <div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar por inquilino ou imóvel..." value={fPag} onChange={e => setFPag(e.target.value)} /></div>
+                <select value={sortPag} onChange={e => setSortPag(e.target.value)}><option value="comp">Ordenar: Competência (recente)</option><option value="tenant">Inquilino (A-Z)</option><option value="amount">Maior valor</option><option value="status">Status</option></select>
+              </div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Competência</th><th>Inquilino</th><th className="hidesm">Imóvel</th><th>Tipo</th><th>Valor</th><th>Status</th><th style={{ textAlign: 'right' }}>Ações</th></tr></thead>
-                <tbody>{payments.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhum lançamento</td></tr> : [...payments].sort((a, b) => String(b.competencia || '').localeCompare(String(a.competencia || '')) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(p => {
+                <tbody>{(() => {
+                  const allPays = payments.filter(p => { if (!fPag) return true; const t = tenants.find(x => x.id === p.tenantId); const pr = props.find(x => x.id === p.propertyId); return ((t?.name || '') + ' ' + (pr?.title || '')).toLowerCase().includes(fPag.toLowerCase()); }).sort((a, b) => {
+                    if (sortPag === 'tenant') return String(tenants.find(x => x.id === a.tenantId)?.name || '').localeCompare(String(tenants.find(x => x.id === b.tenantId)?.name || ''));
+                    if (sortPag === 'amount') return Number(b.amount || 0) - Number(a.amount || 0);
+                    if (sortPag === 'status') return String(a.status || '').localeCompare(String(b.status || ''));
+                    return String(b.competencia || '').localeCompare(String(a.competencia || '')) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+                  });
+                  if (allPays.length === 0) return <tr><td colSpan={7} className="emptyrow">Nenhum lançamento</td></tr>;
+                  return allPays.map(p => {
                   const t = tenants.find(x => x.id === p.tenantId); const pr = props.find(x => x.id === p.propertyId);
                   return <tr key={p.id}>
                     <td className="if-mono">{p.competencia || '—'}</td>
@@ -796,7 +810,7 @@ const App: React.FC = () => {
                       <button className="act danger" title="Excluir" onClick={() => excluirPagamento(p)}><i className="fas fa-trash" /></button>
                     </div></td>
                   </tr>;
-                })}</tbody>
+                }); })()}</tbody>
               </table></div></div>
             </>;
           })()}
