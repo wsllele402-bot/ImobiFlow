@@ -204,6 +204,7 @@ const App: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [form, setForm] = useState<any>(null);
   const [toast, setToast] = useState('');
+  const [dark, setDark] = useState(() => { try { return localStorage.getItem('imobiflow-theme') === 'dark'; } catch { return false; } });
   const [fImo, setFImo] = useState({ q: '', type: '', status: '', owner: '' });
   const [fInq, setFInq] = useState('');
   const [fDesp, setFDesp] = useState({ q: '', cat: '', owner: '' });
@@ -212,6 +213,7 @@ const App: React.FC = () => {
   const [closings, setClosings] = useState<any[]>([]);
 
   useEffect(() => { (async () => { const u = await dbService.getMe(); setUser(u); if (u) await loadAll(); setBooting(false); })(); }, []);
+  useEffect(() => { document.body.classList.toggle('dark', dark); try { localStorage.setItem('imobiflow-theme', dark ? 'dark' : 'light'); } catch { } }, [dark]);
 
   const loadAll = async () => {
     try {
@@ -481,6 +483,7 @@ const App: React.FC = () => {
       <main className="main">
         <header className="top">
           <div><h1>{titles[screen][0]}</h1><div className="subt">{titles[screen][1]}</div></div>
+          <button className="act" title={dark ? 'Modo claro' : 'Modo escuro'} onClick={() => setDark(d => !d)} style={{ width: 38, height: 38 }}><i className={'fas ' + (dark ? 'fa-sun' : 'fa-moon')} /></button>
         </header>
         <div className="wrap">
 
@@ -749,6 +752,25 @@ const App: React.FC = () => {
                   </tr>;
                 })}</tbody>
               </table></div></div>
+              <div className="scrhead" style={{ marginTop: 26 }}><div className="ti">Todos os lançamentos <small>· {payments.length}</small></div></div>
+              <div className="glass tablewrap"><div className="tbl-scroll"><table>
+                <thead><tr><th>Competência</th><th>Inquilino</th><th className="hidesm">Imóvel</th><th>Tipo</th><th>Valor</th><th>Status</th><th style={{ textAlign: 'right' }}>Ações</th></tr></thead>
+                <tbody>{payments.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhum lançamento</td></tr> : [...payments].sort((a, b) => String(b.competencia || '').localeCompare(String(a.competencia || '')) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).map(p => {
+                  const t = tenants.find(x => x.id === p.tenantId); const pr = props.find(x => x.id === p.propertyId);
+                  return <tr key={p.id}>
+                    <td className="if-mono">{p.competencia || '—'}</td>
+                    <td className="t">{t?.name || '—'}</td>
+                    <td className="hidesm">{pr?.title || '—'}</td>
+                    <td>{(p.kind === 'deposit') ? 'Caução' : 'Aluguel'}</td>
+                    <td className="if-mono">R$ {brl(p.amount)}</td>
+                    <td>{p.status === 'RECEIVED' ? <span className="pill ok">Recebido</span> : p.status === 'OVERDUE' ? <span className="pill over">Vencido</span> : <span className="pill warn">Pendente</span>}</td>
+                    <td><div className="acts" style={{ justifyContent: 'flex-end' }}>
+                      {p.invoiceUrl && p.invoiceUrl !== '#' && <button className="act" title="Ver boleto" onClick={() => window.open(p.invoiceUrl, '_blank')}><i className="fas fa-eye" /></button>}
+                      <button className="act danger" title="Excluir" onClick={() => excluirPagamento(p)}><i className="fas fa-trash" /></button>
+                    </div></td>
+                  </tr>;
+                })}</tbody>
+              </table></div></div>
             </>;
           })()}
 
@@ -767,7 +789,7 @@ const App: React.FC = () => {
               const exps = expenses.filter(e => e.ownerId === o.id && String(e.date || '').slice(0, 7) === selMonth);
               const totalFee = recPays.reduce((s, p) => s + Number(p.asaasFee || 0), 0);
               return <div className="glass" style={{ maxWidth: 720, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '24px 26px', background: 'var(--ink)', color: '#fff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '24px 26px', background: '#111827', color: '#fff' }}>
                   <div><div style={{ fontWeight: 900, fontSize: 19 }}>Imobi<span style={{ color: '#a5b4fc' }}>Flow</span></div><div style={{ fontSize: 12, opacity: .85, marginTop: 6 }}>Extrato de Repasse</div></div>
                   <div style={{ textAlign: 'right', fontSize: 12, opacity: .85 }}>Competência<br /><b style={{ color: '#fff' }}>{monthLabel(selMonth)}</b></div>
                 </div>
