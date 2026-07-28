@@ -205,6 +205,7 @@ const App: React.FC = () => {
   const [form, setForm] = useState<any>(null);
   const [toast, setToast] = useState('');
   const [dark, setDark] = useState(() => { try { return localStorage.getItem('imobiflow-theme') === 'dark'; } catch { return false; } });
+  const [navHidden, setNavHidden] = useState(() => { try { return localStorage.getItem('imobiflow-nav') === 'hidden'; } catch { return false; } });
   const [fImo, setFImo] = useState({ q: '', type: '', status: '', owner: '' });
   const [fInq, setFInq] = useState('');
   const [fDesp, setFDesp] = useState({ q: '', cat: '', owner: '' });
@@ -216,12 +217,14 @@ const App: React.FC = () => {
   const [sortPag, setSortPag] = useState('comp');
   const [fPend, setFPend] = useState('');
   const [sortPend, setSortPend] = useState('tenant');
+  const [pendEdit, setPendEdit] = useState<any>(null);
   const [repOwner, setRepOwner] = useState('');
   const [selMonth, setSelMonth] = useState(COMP);
   const [closings, setClosings] = useState<any[]>([]);
 
   useEffect(() => { (async () => { const u = await dbService.getMe(); setUser(u); if (u) await loadAll(); setBooting(false); })(); }, []);
   useEffect(() => { document.body.classList.toggle('dark', dark); try { localStorage.setItem('imobiflow-theme', dark ? 'dark' : 'light'); } catch { } }, [dark]);
+  useEffect(() => { try { localStorage.setItem('imobiflow-nav', navHidden ? 'hidden' : 'shown'); } catch { } }, [navHidden]);
 
   const loadAll = async () => {
     try {
@@ -279,7 +282,7 @@ const App: React.FC = () => {
       if (caucaoVal > 0) {
         try {
           const fn = httpsCallable(fns, 'createAsaasCharge');
-          const d = new Date(); d.setDate(d.getDate() + 5); const dueDate = d.toISOString().slice(0, 10);
+          const d = new Date(); d.setDate(d.getDate() + 1); const dueDate = d.toISOString().slice(0, 10);
           const res: any = await fn({ tenantId, leaseId: lease.id, amount: caucaoVal, dueDate, billingType: 'BOLETO', kind: 'deposit', description: 'Caução' });
           await loadAll(); notify('Locação efetivada · boleto de caução gerado ✓');
           if (res?.data?.invoiceUrl) window.open(res.data.invoiceUrl, '_blank');
@@ -351,12 +354,37 @@ const App: React.FC = () => {
   const gerarCobranca = async (lease: any) => {
     try {
       notify('Gerando cobrança no Asaas...');
+      const draft = payments.find(x => x.leaseId === lease.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit' && !x.asaasPaymentId);
+      const amount = draft ? Number(draft.amount || 0) : (Number(lease.monthlyRent) || 0);
+      const dueDate = draft?.dueDate || `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`;
       const fn = httpsCallable(fns, 'createAsaasCharge');
-      const dueDate = `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`;
-      const res: any = await fn({ leaseId: lease.id, tenantId: lease.tenantId, amount: Number(lease.monthlyRent) || 0, dueDate, billingType: 'BOLETO' });
+      const res: any = await fn({ leaseId: lease.id, tenantId: lease.tenantId, amount, dueDate, billingType: 'BOLETO' });
+      if (draft) { try { await dbService.delete('payments', draft.id); } catch (e) { console.error(e); } }
       await loadAll(); notify('Cobrança gerada ✓');
       if (res?.data?.invoiceUrl) window.open(res.data.invoiceUrl, '_blank');
     } catch (err: any) { console.error(err); notify('Erro ao gerar: ' + (err?.message || 'falha')); }
+  };
+  const openPendEdit = (lease: any, draft: any) => {
+    const p = props.find(x => x.id === lease.propertyId);
+    setPendEdit({
+      draftId: draft?.id || null, leaseId: lease.id, tenantId: lease.tenantId,
+      propertyId: lease.propertyId, ownerId: p?.ownerId || '',
+      amount: String(draft ? draft.amount : (lease.monthlyRent || '')),
+      dueDate: draft?.dueDate || `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`,
+    });
+  };
+  const savePendEdit = async () => {
+    if (!pendEdit) return;
+    try {
+      const data = {
+        leaseId: pendEdit.leaseId, tenantId: pendEdit.tenantId, propertyId: pendEdit.propertyId, ownerId: pendEdit.ownerId,
+        amount: Number(pendEdit.amount) || 0, competencia: COMP, dueDate: pendEdit.dueDate,
+        status: 'PENDING', kind: 'rent', asaasFee: BOLETO_FEE,
+      };
+      if (pendEdit.draftId) await dbService.update('payments', pendEdit.draftId, data);
+      else await dbService.insert('payments', { ...data, createdAt: new Date().toISOString() });
+      setPendEdit(null); await loadAll(); notify('Título atualizado ✓');
+    } catch (err) { console.error(err); notify('Erro ao salvar'); }
   };
   const confirmarPag = async (pay: any) => {
     try { await dbService.update('payments', pay.id, { status: 'RECEIVED', receivedAt: new Date().toISOString() }); await loadAll(); notify('Pagamento recebido ✓'); }
@@ -471,7 +499,7 @@ const App: React.FC = () => {
   );
 
   return (
-    <div className="ifapp">
+    <div className={'ifapp' + (navHidden ? ' nonav' : '')}>
       <aside className="side">
         <div className="brand"><div className="mk"><i className="fas fa-building" /></div><div className="nm">Imobi<span>Flow</span></div></div>
         <nav className="nav">
@@ -490,7 +518,10 @@ const App: React.FC = () => {
 
       <main className="main">
         <header className="top">
-          <div><h1>{titles[screen][0]}</h1><div className="subt">{titles[screen][1]}</div></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button className="act hidesm" title={navHidden ? 'Mostrar menu' : 'Esconder menu'} onClick={() => setNavHidden(v => !v)}><i className="fas fa-bars" /></button>
+            <div><h1>{titles[screen][0]}</h1><div className="subt">{titles[screen][1]}</div></div>
+          </div>
           <button className="act" title={dark ? 'Modo claro' : 'Modo escuro'} onClick={() => setDark(d => !d)} style={{ width: 38, height: 38 }}><i className={'fas ' + (dark ? 'fa-sun' : 'fa-moon')} /></button>
         </header>
         <div className="wrap">
@@ -771,21 +802,25 @@ const App: React.FC = () => {
                   const t = tenants.find(x => x.id === l.tenantId); const p = props.find(x => x.id === l.propertyId);
                   const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit');
                   const received = pay?.status === 'RECEIVED';
+                  const hasBoleto = !!(pay && pay.asaasPaymentId);
+                  const valor = pay ? Number(pay.amount || 0) : Number(l.monthlyRent || 0);
+                  const venc = pay?.dueDate ? Number(String(pay.dueDate).slice(8, 10)) : (l.dueDay || 5);
                   return <tr key={l.id}>
-                    <td className="t">{t?.name || '—'}</td><td>{p?.title || '—'}</td><td className="if-mono">R$ {brl(l.monthlyRent)}</td>
-                    <td className="hidesm if-mono" style={{ color: 'var(--gray)' }}>R$ {brl(Number(l.monthlyRent || 0) + BOLETO_FEE)}</td>
-                    <td className="hidesm if-mono">dia {l.dueDay || 5}</td>
-                    <td>{received ? <span className="pill ok">Recebido</span> : pay ? <span className="pill idg">Aguardando</span> : <span className="pill warn">Pendente</span>}</td>
+                    <td className="t">{t?.name || '—'}</td><td>{p?.title || '—'}</td><td className="if-mono">R$ {brl(valor)}</td>
+                    <td className="hidesm if-mono" style={{ color: 'var(--gray)' }}>R$ {brl(valor + BOLETO_FEE)}</td>
+                    <td className="hidesm if-mono">dia {venc}</td>
+                    <td>{received ? <span className="pill ok">Recebido</span> : hasBoleto ? <span className="pill idg">Aguardando</span> : <span className="pill warn">Pendente</span>}</td>
                     <td style={{ textAlign: 'right' }}>
                       <div className="acts" style={{ justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         {received ? <button className="btn-g" onClick={() => desfazerPag(pay)}>Desfazer</button>
-                          : pay ? <>
+                          : hasBoleto ? <>
                             {pay.invoiceUrl && pay.invoiceUrl !== '#' && <button className="btn-g" onClick={() => window.open(pay.invoiceUrl, '_blank')}>Ver boleto</button>}
                             <button className="btn-i" onClick={() => confirmarPag(pay)}>Marcar recebido</button>
                           </>
                             : <>
+                              <button className="act" title="Editar valor / vencimento" onClick={() => openPendEdit(l, pay)}><i className="fas fa-pen" /></button>
                               <button className="btn-i" onClick={() => gerarCobranca(l)}>Gerar boleto</button>
-                              <button className="btn-g" onClick={() => markPayment(l, null)}>Marcar recebido</button>
+                              <button className="btn-g" onClick={() => pay ? confirmarPag(pay) : markPayment(l, null)}>Marcar recebido</button>
                             </>}
                         {pay && <button className="act danger" title="Excluir" onClick={() => excluirPagamento(pay)}><i className="fas fa-trash" /></button>}
                       </div>
@@ -907,6 +942,17 @@ const App: React.FC = () => {
 
       {exitLease && <EncerrarModal lease={exitLease} property={props.find(p => p.id === exitLease.propertyId)} tenant={tenants.find(t => t.id === exitLease.tenantId)} onClose={() => setExitLease(null)} onConfirm={(payload) => encerrarContrato(exitLease, payload)} />}
 
+      {pendEdit && <div className="ov" onClick={() => setPendEdit(null)}>
+        <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+          <div className="mh"><h3><i className="fas fa-pen" /> Editar título pendente</h3><p>Antes de gerar o boleto</p></div>
+          <div className="mb">
+            <div className="field-g" style={{ marginTop: 0 }}><label className="lbl">Valor do aluguel (R$)</label><input className="inp" type="number" value={pendEdit.amount} onChange={e => setPendEdit({ ...pendEdit, amount: e.target.value })} placeholder="Ex: 800" /></div>
+            <div className="field-g"><label className="lbl">Vencimento</label><input className="inp" type="date" value={pendEdit.dueDate} onChange={e => setPendEdit({ ...pendEdit, dueDate: e.target.value })} /></div>
+            <div className="note" style={{ marginTop: 16, marginBottom: 0 }}><i className="fas fa-circle-info" /><span>O boleto sairá com este valor + R$ 2,00 de taxa. Só é possível editar enquanto o boleto não foi gerado.</span></div>
+          </div>
+          <div className="mf"><button className="cancel" onClick={() => setPendEdit(null)}>Cancelar</button><button className="confirm" onClick={savePendEdit}>Salvar</button></div>
+        </div>
+      </div>}
       {toast && <div className="toast"><i className="fas fa-check-circle" />{toast}</div>}
     </div>
   );
