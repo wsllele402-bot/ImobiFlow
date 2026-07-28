@@ -83,7 +83,7 @@ const CHKITEMS = ['Pintura e paredes', 'Elétrica e tomadas', 'Hidráulica e tor
 const STEP_NAMES = ['Imóvel', 'Inquilino', 'Análise de crédito', 'Contrato', 'Vistoria', 'Revisão'];
 
 const Wizard: React.FC<{ properties: any[]; tenants: any[]; owners: any[]; onClose: () => void; onDone: (w: any) => void }> = ({ properties, tenants, owners, onClose, onDone }) => {
-  const avail = properties.filter(p => p.status === 'available');
+  const avail = properties.filter(p => p.status === 'available').sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
   const [step, setStep] = useState(0);
   const today = new Date().toISOString().slice(0, 10);
   const nextYear = (() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); })();
@@ -116,7 +116,7 @@ const Wizard: React.FC<{ properties: any[]; tenants: any[]; owners: any[]; onClo
         {step === 1 && <>
           <div className="field-g" style={{ marginTop: 0 }}><label className="lbl">Inquilino</label><select className="inp" value={w.tenantMode} onChange={e => set('tenantMode', e.target.value)}><option value="new">Cadastrar novo</option><option value="existing">Já cadastrado</option></select></div>
           {w.tenantMode === 'existing'
-            ? <div className="field-g"><label className="lbl">Selecione</label><select className="inp" value={w.tenantId} onChange={e => set('tenantId', e.target.value)}>{tenants.length === 0 ? <option value="">Nenhum cadastrado</option> : tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            ? <div className="field-g"><label className="lbl">Selecione</label><select className="inp" value={w.tenantId} onChange={e => set('tenantId', e.target.value)}>{tenants.length === 0 ? <option value="">Nenhum cadastrado</option> : [...tenants].sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''))).map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
             : <><div className="field-g"><label className="lbl">Nome</label><input className="inp" value={w.tName} onChange={e => set('tName', e.target.value)} /></div>
               <div style={{ display: 'flex', gap: 12 }}><div className="field-g" style={{ flex: 1 }}><label className="lbl">CPF/CNPJ</label><input className="inp" value={w.tDoc} onChange={e => set('tDoc', e.target.value)} /></div><div className="field-g" style={{ flex: 1 }}><label className="lbl">Telefone</label><input className="inp" value={w.tPhone} onChange={e => set('tPhone', e.target.value)} /></div></div>
               <label className="lbl" style={{ display: 'block', margin: '14px 0 7px' }}>Documentos</label><div className="dz" onClick={() => alert('A Pasta Digital (upload de documentos) entra na próxima etapa.')}><i className="fas fa-cloud-arrow-up" /><div style={{ marginTop: 6 }}>Anexar RG/CPF e comprovante de renda</div></div></>}
@@ -214,6 +214,8 @@ const App: React.FC = () => {
   const [sortDesp, setSortDesp] = useState('date-desc');
   const [fPag, setFPag] = useState('');
   const [sortPag, setSortPag] = useState('comp');
+  const [fPend, setFPend] = useState('');
+  const [sortPend, setSortPend] = useState('tenant');
   const [repOwner, setRepOwner] = useState('');
   const [selMonth, setSelMonth] = useState(COMP);
   const [closings, setClosings] = useState<any[]>([]);
@@ -296,7 +298,7 @@ const App: React.FC = () => {
     const mode = o.commissionMode || 'deducted';
     const taxa = Math.round(recebido * rate / 100);
     const liquido = mode === 'deducted' ? recebido - desp - taxa : recebido - desp;
-    return { recebido, desp, rate, mode, taxa, liquido, names: ps.map(p => p.title).join(' · ') || 'Sem imóveis alugados' };
+    return { recebido, desp, rate, mode, taxa, liquido, names: ps.map(p => p.title).sort((a, b) => String(a).localeCompare(String(b))).join(' · ') || 'Sem imóveis alugados' };
   };
   const fecharMes = async (o: any, month: string, calc: any) => {
     try { await dbService.insert('closings', { ownerId: o.id, month, recebido: calc.recebido, desp: calc.desp, taxa: calc.taxa, liquido: calc.liquido, rate: calc.rate, mode: calc.mode, closedAt: new Date().toISOString() }); await loadAll(); notify('Mês fechado ✓'); }
@@ -743,6 +745,12 @@ const App: React.FC = () => {
           {screen === 'pagamentos' && (() => {
             const activeLeases = leases.filter(l => l.active);
             const pendentes = activeLeases.filter(l => { const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit'); return !(pay && pay.status === 'RECEIVED'); });
+            const pendentesView = pendentes.filter(l => { if (!fPend) return true; const t = tenants.find(x => x.id === l.tenantId); const pr = props.find(x => x.id === l.propertyId); return ((t?.name || '') + ' ' + (pr?.title || '')).toLowerCase().includes(fPend.toLowerCase()); }).sort((a, b) => {
+              if (sortPend === 'property') return String(props.find(x => x.id === a.propertyId)?.title || '').localeCompare(String(props.find(x => x.id === b.propertyId)?.title || ''));
+              if (sortPend === 'rent-desc') return Number(b.monthlyRent || 0) - Number(a.monthlyRent || 0);
+              if (sortPend === 'due') return Number(a.dueDay || 5) - Number(b.dueDay || 5);
+              return String(tenants.find(x => x.id === a.tenantId)?.name || '').localeCompare(String(tenants.find(x => x.id === b.tenantId)?.name || ''));
+            });
             const recebidoMes = payments.filter(p => p.competencia === COMP && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0);
             const previstoMes = activeLeases.reduce((s, l) => s + Number(l.monthlyRent || 0), 0);
             return <>
@@ -753,9 +761,13 @@ const App: React.FC = () => {
                 <div className="kpi glass"><div className="lbl">Previsto</div><div className="v if-mono">{brl(previstoMes)}</div></div>
               </div>
               <div className="note"><i className="fas fa-circle-info" /><span>Aqui ficam só as cobranças <b>pendentes</b> do mês — quando o inquilino paga, ela some daqui e aparece em <b>Todos os lançamentos</b> (mais abaixo). As cobranças são geradas automaticamente todo dia 1º. O boleto inclui a taxa Asaas de R$ 2,00.</span></div>
+              <div className="filters">
+                <div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar por inquilino ou imóvel..." value={fPend} onChange={e => setFPend(e.target.value)} /></div>
+                <select value={sortPend} onChange={e => setSortPend(e.target.value)}><option value="tenant">Ordenar: Inquilino (A-Z)</option><option value="property">Imóvel (A-Z)</option><option value="rent-desc">Maior aluguel</option><option value="due">Dia de vencimento</option></select>
+              </div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Aluguel</th><th className="hidesm">Boleto (c/ taxa)</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
-                <tbody>{pendentes.length === 0 ? <tr><td colSpan={7} className="emptyrow">Nenhuma cobrança pendente neste mês 🎉</td></tr> : pendentes.map(l => {
+                <tbody>{pendentesView.length === 0 ? <tr><td colSpan={7} className="emptyrow">{pendentes.length === 0 ? 'Nenhuma cobrança pendente neste mês 🎉' : 'Nada encontrado com esse filtro'}</td></tr> : pendentesView.map(l => {
                   const t = tenants.find(x => x.id === l.tenantId); const p = props.find(x => x.id === l.propertyId);
                   const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit');
                   const received = pay?.status === 'RECEIVED';
