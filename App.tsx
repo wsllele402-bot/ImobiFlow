@@ -7,7 +7,7 @@ import { PropertyType, ExpenseCategory } from './types';
 
 const fns = getFunctions(fbApp, 'southamerica-east1');
 
-const brl = (n: any) => Number(n || 0).toLocaleString('pt-BR');
+const brl = (n: any) => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const TIPOS = Object.values(PropertyType);
 const CATS = Object.values(ExpenseCategory);
 const propIcon = (t: string) => t === PropertyType.CASA ? 'fa-house' : t === PropertyType.GALPAO ? 'fa-warehouse' : 'fa-building';
@@ -151,10 +151,10 @@ const Wizard: React.FC<{ properties: any[]; tenants: any[]; owners: any[]; onClo
             <div className="revrow"><span className="k">Inquilino</span><span className="v">{tn || '—'}</span></div>
             <div className="revrow"><span className="k">Crédito</span><span className="v">{cl[w.creditResult]}</span></div>
             <div className="revrow"><span className="k">Contrato</span><span className="v">{w.start} a {w.end}</span></div>
-            <div className="revrow"><span className="k">Aluguel</span><span className="v">R$ {Number(w.rent || 0).toLocaleString('pt-BR')} · dia {w.dueDay}</span></div>
+            <div className="revrow"><span className="k">Aluguel</span><span className="v">R$ {brl(w.rent)} · dia {w.dueDay}</span></div>
             <div className="revrow"><span className="k">Reajuste / Garantia</span><span className="v">{w.index} · {w.guarantee}</span></div>
             <div className="revrow"><span className="k">Vistoria</span><span className="v">{okc} de {CHKITEMS.length} itens</span></div>
-            {w.caucao && Number(w.caucaoValue) > 0 && <div className="revrow"><span className="k">Caução</span><span className="v">R$ {Number(w.caucaoValue).toLocaleString('pt-BR')} · boleto será gerado</span></div>}
+            {w.caucao && Number(w.caucaoValue) > 0 && <div className="revrow"><span className="k">Caução</span><span className="v">R$ {brl(w.caucaoValue)} · boleto será gerado</span></div>}
             <div className="note" style={{ marginTop: 14 }}><i className="fas fa-circle-info" /><span>Ao efetivar: o imóvel passa a <b>Alugado</b> e o contrato é criado.</span></div>
           </>;
         })()}
@@ -511,7 +511,7 @@ const App: React.FC = () => {
               return <div className="kpis">
                 <div className="kpi glass"><div className="ic bg-ind"><i className="fas fa-house" /></div><div className="lbl">Imóveis Alugados</div><div className="v">{alug} <small>/{tot}</small></div><div className="m">{tot - alug} disponível(is)</div></div>
                 <div className="kpi glass"><div className="ic bg-eme"><i className="fas fa-sack-dollar" /></div><div className="lbl">Recebido no Mês</div><div className="v if-mono">{brl(rec)}</div><div className="m">de R$ {brl(previsto)} previstos</div></div>
-                <div className="kpi glass"><div className="ic bg-amb"><i className="fas fa-right-left" /></div><div className="lbl">Saldo p/ Repasse</div><div className="v if-mono">{brl(rep)}</div><div className="m">{scOwners.length} proprietário(s)</div></div>
+                <div className="kpi glass hero"><div className="ic"><i className="fas fa-right-left" /></div><div className="lbl">Saldo p/ Repasse</div><div className="v if-mono">{brl(rep)}</div><div className="m">{scOwners.length} proprietário(s)</div></div>
                 <div className="kpi glass"><div className="ic bg-red"><i className="fas fa-screwdriver-wrench" /></div><div className="lbl">Em Manutenção</div><div className="v">{scProps.filter(p => p.status === 'maintenance').length}</div><div className="m">imóveis parados</div></div>
               </div>;
             })()}
@@ -838,11 +838,11 @@ const App: React.FC = () => {
               const closing = closings.find(cl => cl.ownerId === o.id && cl.month === selMonth);
               const live = calcOwner(o, selMonth);
               const c = closing || live;
-              const recPays = payments.filter(p => p.ownerId === o.id && recMonthOf(p) === selMonth && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit');
-              const exps = expenses.filter(e => e.ownerId === o.id && String(e.date || '').slice(0, 7) === selMonth);
+              const recPays = payments.filter(p => p.ownerId === o.id && recMonthOf(p) === selMonth && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit').sort((a, b) => String(props.find(x => x.id === a.propertyId)?.title || '').localeCompare(String(props.find(x => x.id === b.propertyId)?.title || '')));
+              const exps = expenses.filter(e => e.ownerId === o.id && String(e.date || '').slice(0, 7) === selMonth).sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
               const totalFee = recPays.reduce((s, p) => s + Number(p.asaasFee || 0), 0);
               return <div className="glass" style={{ maxWidth: 720, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '24px 26px', background: '#111827', color: '#fff' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '24px 26px', background: '#15211b', color: '#fff' }}>
                   <div><div style={{ fontWeight: 900, fontSize: 19 }}>Imobi<span style={{ color: '#a5b4fc' }}>Flow</span></div><div style={{ fontSize: 12, opacity: .85, marginTop: 6 }}>Extrato de Repasse</div></div>
                   <div style={{ textAlign: 'right', fontSize: 12, opacity: .85 }}>Competência<br /><b style={{ color: '#fff' }}>{monthLabel(selMonth)}</b></div>
                 </div>
