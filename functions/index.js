@@ -30,24 +30,28 @@ async function asaas(path, method, body, apiKey) {
 // Garante um cliente no Asaas para o inquilino.
 // Reaproveita um cliente já existente (pelo CPF/CNPJ) e só cria um novo se não achar.
 async function ensureCustomer(tenantId, tenant, apiKey) {
-  if (tenant.asaasId) return tenant.asaasId;
+  if (tenant.asaasId) { console.log("ensureCustomer: já tem asaasId", tenant.asaasId); return tenant.asaasId; }
   const doc = String(tenant.document || "").replace(/\D/g, "");
+  console.log("ensureCustomer: procurando por CPF/CNPJ =", JSON.stringify(doc));
 
   // 1) tenta reaproveitar um cliente já cadastrado no Asaas (pelo documento)
   if (doc) {
     try {
       const found = await asaas(`/customers?cpfCnpj=${doc}`, "GET", null, apiKey);
+      console.log("ensureCustomer: resultados encontrados =", found && found.totalCount, "| ids:", (found && found.data || []).map((c) => c.id).join(","));
       if (found && Array.isArray(found.data) && found.data.length > 0) {
         const existingId = found.data[0].id;
         await db.collection("tenants").doc(tenantId).update({ asaasId: existingId });
+        console.log("ensureCustomer: REAPROVEITANDO cliente existente", existingId);
         return existingId;
       }
     } catch (e) {
-      console.error("Busca de cliente no Asaas falhou, criando novo:", e);
+      console.error("ensureCustomer: busca falhou, vai criar novo:", e);
     }
   }
 
   // 2) não achou -> cria um novo
+  console.log("ensureCustomer: nenhum encontrado -> criando NOVO cliente");
   const customer = await asaas("/customers", "POST", {
     name: tenant.name,
     cpfCnpj: doc || undefined,
