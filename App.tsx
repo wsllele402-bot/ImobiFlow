@@ -216,6 +216,7 @@ const App: React.FC = () => {
   const [fPag, setFPag] = useState('');
   const [sortPag, setSortPag] = useState('comp');
   const [mesPag, setMesPag] = useState('');
+  const [mesPend, setMesPend] = useState(COMP);
   const [fPend, setFPend] = useState('');
   const [sortPend, setSortPend] = useState('tenant');
   const [pendEdit, setPendEdit] = useState<any>(null);
@@ -345,8 +346,8 @@ const App: React.FC = () => {
         const p = props.find(x => x.id === lease.propertyId);
         await dbService.insert('payments', {
           leaseId: lease.id, tenantId: lease.tenantId, propertyId: lease.propertyId, ownerId: p?.ownerId || '',
-          amount: Number(lease.monthlyRent) || 0, asaasFee: BOLETO_FEE, competencia: COMP,
-          dueDate: `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`, status: 'RECEIVED', receivedAt: new Date().toISOString(),
+          amount: Number(lease.monthlyRent) || 0, asaasFee: BOLETO_FEE, competencia: mesPend,
+          dueDate: `${mesPend}-${String(lease.dueDay || 5).padStart(2, '0')}`, status: 'RECEIVED', receivedAt: new Date().toISOString(),
         });
       }
       await loadAll(); notify(existing ? 'Recebimento desfeito' : 'Pagamento recebido ✓');
@@ -355,9 +356,9 @@ const App: React.FC = () => {
   const gerarCobranca = async (lease: any) => {
     try {
       notify('Gerando cobrança no Asaas...');
-      const draft = payments.find(x => x.leaseId === lease.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit' && !x.asaasPaymentId);
+      const draft = payments.find(x => x.leaseId === lease.id && x.competencia === mesPend && (x.kind || 'rent') !== 'deposit' && !x.asaasPaymentId);
       const amount = draft ? Number(draft.amount || 0) : (Number(lease.monthlyRent) || 0);
-      const dueDate = draft?.dueDate || `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`;
+      const dueDate = draft?.dueDate || `${mesPend}-${String(lease.dueDay || 5).padStart(2, '0')}`;
       const fn = httpsCallable(fns, 'createAsaasCharge');
       const res: any = await fn({ leaseId: lease.id, tenantId: lease.tenantId, amount, dueDate, billingType: 'BOLETO' });
       if (draft) { try { await dbService.delete('payments', draft.id); } catch (e) { console.error(e); } }
@@ -371,7 +372,7 @@ const App: React.FC = () => {
       draftId: draft?.id || null, leaseId: lease.id, tenantId: lease.tenantId,
       propertyId: lease.propertyId, ownerId: p?.ownerId || '',
       amount: String(draft ? draft.amount : (lease.monthlyRent || '')),
-      dueDate: draft?.dueDate || `${COMP}-${String(lease.dueDay || 5).padStart(2, '0')}`,
+      dueDate: draft?.dueDate || `${mesPend}-${String(lease.dueDay || 5).padStart(2, '0')}`,
     });
   };
   const savePendEdit = async () => {
@@ -379,7 +380,7 @@ const App: React.FC = () => {
     try {
       const data = {
         leaseId: pendEdit.leaseId, tenantId: pendEdit.tenantId, propertyId: pendEdit.propertyId, ownerId: pendEdit.ownerId,
-        amount: Number(pendEdit.amount) || 0, competencia: COMP, dueDate: pendEdit.dueDate,
+        amount: Number(pendEdit.amount) || 0, competencia: mesPend, dueDate: pendEdit.dueDate,
         status: 'PENDING', kind: 'rent', asaasFee: BOLETO_FEE,
       };
       if (pendEdit.draftId) await dbService.update('payments', pendEdit.draftId, data);
@@ -776,14 +777,14 @@ const App: React.FC = () => {
 
           {screen === 'pagamentos' && (() => {
             const activeLeases = leases.filter(l => l.active);
-            const pendentes = activeLeases.filter(l => { const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit'); return !(pay && pay.status === 'RECEIVED'); });
+            const pendentes = activeLeases.filter(l => { const pay = payments.find(x => x.leaseId === l.id && x.competencia === mesPend && (x.kind || 'rent') !== 'deposit'); return !(pay && pay.status === 'RECEIVED'); });
             const pendentesView = pendentes.filter(l => { if (!fPend) return true; const t = tenants.find(x => x.id === l.tenantId); const pr = props.find(x => x.id === l.propertyId); return ((t?.name || '') + ' ' + (pr?.title || '')).toLowerCase().includes(fPend.toLowerCase()); }).sort((a, b) => {
               if (sortPend === 'property') return String(props.find(x => x.id === a.propertyId)?.title || '').localeCompare(String(props.find(x => x.id === b.propertyId)?.title || ''));
               if (sortPend === 'rent-desc') return Number(b.monthlyRent || 0) - Number(a.monthlyRent || 0);
               if (sortPend === 'due') return Number(a.dueDay || 5) - Number(b.dueDay || 5);
               return String(tenants.find(x => x.id === a.tenantId)?.name || '').localeCompare(String(tenants.find(x => x.id === b.tenantId)?.name || ''));
             });
-            const recebidoMes = payments.filter(p => p.competencia === COMP && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0);
+            const recebidoMes = payments.filter(p => p.competencia === mesPend && p.status === 'RECEIVED' && (p.kind || 'rent') !== 'deposit').reduce((s, p) => s + Number(p.amount || 0), 0);
             const previstoMes = activeLeases.reduce((s, l) => s + Number(l.monthlyRent || 0), 0);
             return <>
               <div className="scrhead"><div className="ti">Pagamentos <small>· {COMP_LABEL}</small></div></div>
@@ -795,13 +796,14 @@ const App: React.FC = () => {
               <div className="note"><i className="fas fa-circle-info" /><span>Aqui ficam só as cobranças <b>pendentes</b> do mês — quando o inquilino paga, ela some daqui e aparece em <b>Todos os lançamentos</b> (mais abaixo). As cobranças são geradas automaticamente todo dia 1º. O boleto inclui a taxa Asaas de R$ 2,00.</span></div>
               <div className="filters">
                 <div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar por inquilino ou imóvel..." value={fPend} onChange={e => setFPend(e.target.value)} /></div>
+                <select value={mesPend} onChange={e => setMesPend(e.target.value)}>{MONTH_OPTIONS.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>
                 <select value={sortPend} onChange={e => setSortPend(e.target.value)}><option value="tenant">Ordenar: Inquilino (A-Z)</option><option value="property">Imóvel (A-Z)</option><option value="rent-desc">Maior aluguel</option><option value="due">Dia de vencimento</option></select>
               </div>
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Inquilino</th><th>Imóvel</th><th>Aluguel</th><th className="hidesm">Boleto (c/ taxa)</th><th className="hidesm">Vencimento</th><th>Status</th><th style={{ textAlign: 'right' }}>Ação</th></tr></thead>
                 <tbody>{pendentesView.length === 0 ? <tr><td colSpan={7} className="emptyrow">{pendentes.length === 0 ? 'Nenhuma cobrança pendente neste mês 🎉' : 'Nada encontrado com esse filtro'}</td></tr> : pendentesView.map(l => {
                   const t = tenants.find(x => x.id === l.tenantId); const p = props.find(x => x.id === l.propertyId);
-                  const pay = payments.find(x => x.leaseId === l.id && x.competencia === COMP && (x.kind || 'rent') !== 'deposit');
+                  const pay = payments.find(x => x.leaseId === l.id && x.competencia === mesPend && (x.kind || 'rent') !== 'deposit');
                   const received = pay?.status === 'RECEIVED';
                   const hasBoleto = !!(pay && pay.asaasPaymentId);
                   const valor = pay ? Number(pay.amount || 0) : Number(l.monthlyRent || 0);
