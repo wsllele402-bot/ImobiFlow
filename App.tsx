@@ -215,6 +215,7 @@ const App: React.FC = () => {
   const [sortDesp, setSortDesp] = useState('date-desc');
   const [fPag, setFPag] = useState('');
   const [sortPag, setSortPag] = useState('comp');
+  const [mesPag, setMesPag] = useState('');
   const [fPend, setFPend] = useState('');
   const [sortPend, setSortPend] = useState('tenant');
   const [pendEdit, setPendEdit] = useState<any>(null);
@@ -831,12 +832,25 @@ const App: React.FC = () => {
               <div className="scrhead" style={{ marginTop: 26 }}><div className="ti">Todos os lançamentos <small>· {payments.length}</small></div></div>
               <div className="filters">
                 <div className="fsearch"><i className="fas fa-search" /><input placeholder="Buscar por inquilino ou imóvel..." value={fPag} onChange={e => setFPag(e.target.value)} /></div>
+                <select value={mesPag} onChange={e => setMesPag(e.target.value)}><option value="">Todos os meses</option>{MONTH_OPTIONS.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}</select>
                 <select value={sortPag} onChange={e => setSortPag(e.target.value)}><option value="comp">Ordenar: Competência (recente)</option><option value="tenant">Inquilino (A-Z)</option><option value="amount">Maior valor</option><option value="status">Status</option></select>
               </div>
+              {mesPag && (() => {
+                const doMes = payments.filter(p => p.competencia === mesPag && (p.kind || 'rent') !== 'deposit');
+                const pagos = doMes.filter(p => p.status === 'RECEIVED');
+                const abertos = doMes.filter(p => p.status !== 'RECEIVED');
+                const totRec = pagos.reduce((s, p) => s + Number(p.amount || 0), 0);
+                const totAb = abertos.reduce((s, p) => s + Number(p.amount || 0), 0);
+                return <div className="glass" style={{ padding: '14px 18px', marginBottom: 14, display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 800, fontSize: 13.5 }}>{monthLabel(mesPag)}</div>
+                  <div style={{ fontSize: 13 }}><span className="pill ok">{pagos.length} pagos</span> <span className="if-mono" style={{ color: 'var(--gray)' }}>R$ {brl(totRec)}</span></div>
+                  <div style={{ fontSize: 13 }}><span className="pill warn">{abertos.length} em aberto</span> <span className="if-mono" style={{ color: 'var(--gray)' }}>R$ {brl(totAb)}</span></div>
+                </div>;
+              })()}
               <div className="glass tablewrap"><div className="tbl-scroll"><table>
                 <thead><tr><th>Competência</th><th>Inquilino</th><th className="hidesm">Imóvel</th><th>Tipo</th><th>Valor</th><th>Status</th><th style={{ textAlign: 'right' }}>Ações</th></tr></thead>
                 <tbody>{(() => {
-                  const allPays = payments.filter(p => { if (!fPag) return true; const t = tenants.find(x => x.id === p.tenantId); const pr = props.find(x => x.id === p.propertyId); return ((t?.name || '') + ' ' + (pr?.title || '')).toLowerCase().includes(fPag.toLowerCase()); }).sort((a, b) => {
+                  const allPays = payments.filter(p => { if (mesPag && p.competencia !== mesPag) return false; if (!fPag) return true; const t = tenants.find(x => x.id === p.tenantId); const pr = props.find(x => x.id === p.propertyId); return ((t?.name || '') + ' ' + (pr?.title || '')).toLowerCase().includes(fPag.toLowerCase()); }).sort((a, b) => {
                     if (sortPag === 'tenant') return String(tenants.find(x => x.id === a.tenantId)?.name || '').localeCompare(String(tenants.find(x => x.id === b.tenantId)?.name || ''));
                     if (sortPag === 'amount') return Number(b.amount || 0) - Number(a.amount || 0);
                     if (sortPag === 'status') return String(a.status || '').localeCompare(String(b.status || ''));
