@@ -27,35 +27,70 @@ async function asaas(path, method, body, apiKey) {
   return data;
 }
 
+// Deixa o cliente com notificações SOMENTE por WhatsApp (desliga e-mail, SMS, voz).
+async function setWhatsappOnly(customerId, apiKey) {
+  try {
+    const list = await asaas(`/customers/${customerId}/notifications`, "GET", null, apiKey);
+    const notifs = (list && list.data) || [];
+    if (!notifs.length) return;
+    const body = {
+      customer: customerId,
+      notifications: notifs.map((n) => ({
+        id: n.id,
+        enabled: true,
+        emailEnabledForProvider: false,
+        smsEnabledForProvider: false,
+        emailEnabledForCustomer: false,
+        smsEnabledForCustomer: false,
+        phoneCallEnabledForCustomer: false,
+        whatsappEnabledForCustomer: true,
+      })),
+    };
+    await asaas("/notifications/batch", "POST", body, apiKey);
+    console.log("setWhatsappOnly: OK para", customerId, "(", notifs.length, "notificações)");
+  } catch (e) {
+    console.error("setWhatsappOnly falhou (ignorado):", e);
+  }
+}
+
 // Garante um cliente no Asaas para o inquilino.
 // Reaproveita um cliente já existente (pelo CPF/CNPJ) e só cria um novo se não achar.
+// Também configura as notificações do cliente para somente WhatsApp (uma vez por inquilino).
 async function ensureCustomer(tenantId, tenant, apiKey) {
-  if (tenant.asaasId) return tenant.asaasId;
-  const doc = String(tenant.document || "").replace(/\D/g, "");
+  if (tenant.asaasId && tenant.notifConfigured) return tenant.asaasId;
 
-  // 1) tenta reaproveitar um cliente já cadastrado no Asaas (pelo documento)
-  if (doc) {
-    try {
-      const found = await asaas(`/customers?cpfCnpj=${doc}`, "GET", null, apiKey);
-      if (found && Array.isArray(found.data) && found.data.length > 0) {
-        const existingId = found.data[0].id;
-        await db.collection("tenants").doc(tenantId).update({ asaasId: existingId });
-        return existingId;
+  let customerId = tenant.asaasId;
+  if (!customerId) {
+    const doc = String(tenant.document || "").replace(/\D/g, "");
+    // 1) tenta reaproveitar um cliente já cadastrado no Asaas (pelo documento)
+    if (doc) {
+      try {
+        const found = await asaas(`/customers?cpfCnpj=${doc}`, "GET", null, apiKey);
+        if (found && Array.isArray(found.data) && found.data.length > 0) {
+          customerId = found.data[0].id;
+          console.log("ensureCustomer: reaproveitando cliente", customerId);
+        }
+      } catch (e) {
+        console.error("Busca de cliente no Asaas falhou:", e);
       }
-    } catch (e) {
-      console.error("Busca de cliente no Asaas falhou, criando novo:", e);
+    }
+    // 2) não achou -> cria um novo
+    if (!customerId) {
+      const customer = await asaas("/customers", "POST", {
+        name: tenant.name,
+        cpfCnpj: doc || undefined,
+        mobilePhone: String(tenant.phone || "").replace(/\D/g, "") || undefined,
+        email: tenant.email || undefined,
+      }, apiKey);
+      customerId = customer.id;
+      console.log("ensureCustomer: novo cliente criado", customerId);
     }
   }
 
-  // 2) não achou -> cria um novo
-  const customer = await asaas("/customers", "POST", {
-    name: tenant.name,
-    cpfCnpj: doc || undefined,
-    mobilePhone: String(tenant.phone || "").replace(/\D/g, "") || undefined,
-    email: tenant.email || undefined,
-  }, apiKey);
-  await db.collection("tenants").doc(tenantId).update({ asaasId: customer.id });
-  return customer.id;
+  // 3) configura notificações somente por WhatsApp e marca como configurado
+  await setWhatsappOnly(customerId, apiKey);
+  await db.collection("tenants").doc(tenantId).update({ asaasId: customerId, notifConfigured: true });
+  return customerId;
 }
 
 async function refsDaLocacao(lease) {
